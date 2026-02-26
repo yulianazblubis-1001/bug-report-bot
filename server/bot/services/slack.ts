@@ -21,10 +21,12 @@ function buildBugReportBlocks(session: BotSession): any[] {
   const profile = session.profile;
   const timestamp = getWIBTimestamp();
 
+  const title = report.title || '[Other] Bug Report';
+
   const blocks: any[] = [
     {
       type: 'header',
-      text: { type: 'plain_text', text: `🐛 BUG REPORT | ${report.title || 'Bug Report'}`, emoji: true },
+      text: { type: 'plain_text', text: title, emoji: false },
     },
     { type: 'divider' },
     {
@@ -32,56 +34,71 @@ function buildBugReportBlocks(session: BotSession): any[] {
       fields: [
         {
           type: 'mrkdwn',
-          text: `*👤 Reporter:*\n${profile?.name || session.senderName} (${profile?.zohoEmail || session.phoneNumber})`,
+          text: `*Reporter:* ${profile?.name || session.senderName} (${profile?.zohoEmail || session.phoneNumber})`,
         },
         {
           type: 'mrkdwn',
-          text: `*📍 Area:*\n${profile?.area || '—'}`,
+          text: `*Category:* ${report.category || '—'}`,
         },
       ],
-    },
-    {
-      type: 'section',
-      fields: [
-        {
-          type: 'mrkdwn',
-          text: `*📱 Phone:*\n+${session.phoneNumber}`,
-        },
-        {
-          type: 'mrkdwn',
-          text: `*🕐 Submitted:*\n${timestamp}`,
-        },
-      ],
-    },
-    { type: 'divider' },
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `*Description:*\n${report.description || '—'}`,
-      },
     },
   ];
 
-  if (report.stepsToReproduce) {
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: `*Steps to Reproduce:*\n${report.stepsToReproduce}` },
-    });
-  }
+  const pgFarmerParts: string[] = [];
+  if (report.pgName) pgFarmerParts.push(report.pgName);
+  if (report.farmerName) pgFarmerParts.push(report.farmerName);
+  if (report.invoiceNumber) pgFarmerParts.push(`Invoice: ${report.invoiceNumber}`);
+  const pgFarmerLine = pgFarmerParts.length > 0 ? pgFarmerParts.join(' / ') : '—';
 
-  const details: string[] = [];
-  if (report.platform) details.push(`*Platform:* ${report.platform}`);
-  if (report.appVersion) details.push(`*App Version:* ${report.appVersion}`);
-  if (report.category) details.push(`*Category:* ${report.category}`);
-  if (report.relatedInfo) details.push(`*Related:* ${report.relatedInfo}`);
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `*PG/Farmer:* ${pgFarmerLine}`,
+    },
+  });
 
-  if (details.length > 0) {
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: details.join('\n') },
-    });
-  }
+  blocks.push({ type: 'divider' });
+
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `*Description:*\n${report.description || '—'}`,
+    },
+  });
+
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `*Steps to Reproduce:*\n${report.stepsToReproduce || 'Not provided'}`,
+    },
+  });
+
+  const detailParts: string[] = [];
+  detailParts.push(`*App Version:* ${report.appVersion || '—'}`);
+  detailParts.push(`*Platform:* ${report.platform || '—'}`);
+
+  blocks.push({
+    type: 'section',
+    fields: [
+      { type: 'mrkdwn', text: detailParts[0] },
+      { type: 'mrkdwn', text: detailParts[1] },
+    ],
+  });
+
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: `*Additional Info:* ${report.additionalInfo || '—'}` },
+  });
+
+  blocks.push({
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: `_Original: ${report.originalText || '—'}_` }],
+  });
+
+  blocks.push({ type: 'divider' });
 
   if (session.mediaUrls.length > 0) {
     for (const url of session.mediaUrls) {
@@ -94,9 +111,14 @@ function buildBugReportBlocks(session: BotSession): any[] {
   } else {
     blocks.push({
       type: 'context',
-      elements: [{ type: 'mrkdwn', text: '_No screenshot attached_' }],
+      elements: [{ type: 'mrkdwn', text: 'No photos attached' }],
     });
   }
+
+  blocks.push({
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: `${timestamp} | +${session.phoneNumber} | ${profile?.area || '—'}` }],
+  });
 
   return blocks;
 }
@@ -106,10 +128,12 @@ function buildAdminRequestBlocks(session: BotSession): any[] {
   const profile = session.profile;
   const timestamp = getWIBTimestamp();
 
+  const title = report.title || '[Admin Request] Request';
+
   const blocks: any[] = [
     {
       type: 'header',
-      text: { type: 'plain_text', text: `⚙️ ADMIN REQUEST | ${report.title || 'Admin Request'}`, emoji: true },
+      text: { type: 'plain_text', text: title, emoji: false },
     },
     { type: 'divider' },
     {
@@ -117,64 +141,78 @@ function buildAdminRequestBlocks(session: BotSession): any[] {
       fields: [
         {
           type: 'mrkdwn',
-          text: `*👤 Requestor:*\n${profile?.name || session.senderName} (${profile?.zohoEmail || session.phoneNumber})`,
+          text: `*Reporter:* ${profile?.name || session.senderName} (${profile?.zohoEmail || session.phoneNumber})`,
         },
         {
           type: 'mrkdwn',
-          text: `*📍 Area:*\n${profile?.area || '—'}`,
+          text: `*Category:* ${report.category || '—'}`,
         },
       ],
-    },
-    {
-      type: 'section',
-      fields: [
-        {
-          type: 'mrkdwn',
-          text: `*📱 Phone:*\n+${session.phoneNumber}`,
-        },
-        {
-          type: 'mrkdwn',
-          text: `*🕐 Submitted:*\n${timestamp}`,
-        },
-      ],
-    },
-    { type: 'divider' },
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `*Request:*\n${report.description || '—'}`,
-      },
     },
   ];
 
-  const details: string[] = [];
-  if (report.accountAffected) details.push(`*Account Affected:* ${report.accountAffected}`);
-  if (report.reason) details.push(`*Reason:* ${report.reason}`);
-  if (report.urgency) details.push(`*Urgency:* ${report.urgency}`);
-  if (report.category) details.push(`*Category:* ${report.category}`);
-
-  if (details.length > 0) {
+  if (report.accountAffected) {
     blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: details.join('\n') },
+      text: { type: 'mrkdwn', text: `*Account Affected:* ${report.accountAffected}` },
     });
   }
+
+  blocks.push({ type: 'divider' });
+
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `*Description:*\n${report.description || '—'}`,
+    },
+  });
+
+  if (report.reason) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Reason:* ${report.reason}` },
+    });
+  }
+
+  if (report.urgency) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Urgency:* ${report.urgency}` },
+    });
+  }
+
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: `*Additional Info:* ${report.additionalInfo || '—'}` },
+  });
+
+  blocks.push({
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: `_Original: ${report.originalText || '—'}_` }],
+  });
+
+  blocks.push({ type: 'divider' });
 
   if (session.mediaUrls.length > 0) {
     for (const url of session.mediaUrls) {
       blocks.push({
         type: 'image',
         image_url: url,
-        alt_text: 'Screenshot from requestor',
+        alt_text: 'Screenshot from reporter',
       });
     }
   } else {
     blocks.push({
       type: 'context',
-      elements: [{ type: 'mrkdwn', text: '_No screenshot attached_' }],
+      elements: [{ type: 'mrkdwn', text: 'No photos attached' }],
     });
   }
+
+  blocks.push({
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: `${timestamp} | +${session.phoneNumber} | ${profile?.area || '—'}` }],
+  });
 
   return blocks;
 }
@@ -199,10 +237,7 @@ export async function postToSlack(
       : buildAdminRequestBlocks(session);
 
   const report = session.parsedReport || {};
-  const fallbackText =
-    session.reportType === 'bug'
-      ? `🐛 Bug Report from ${session.profile?.name || session.senderName}: ${report.title || ''}`
-      : `⚙️ Admin Request from ${session.profile?.name || session.senderName}: ${report.title || ''}`;
+  const fallbackText = `${report.title || 'Report'} — ${session.profile?.name || session.senderName}`;
 
   try {
     const res = await axios.post(webhookUrl, {
