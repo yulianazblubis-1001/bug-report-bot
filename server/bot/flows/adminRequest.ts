@@ -1,13 +1,13 @@
 import type { BotSession } from '../session';
+import { isGarbageInput, validateTextInput, REJECTION_MSG } from './validation';
 
 interface StepDef {
   id: string;
   question: string;
   required: boolean;
-  minLength?: number;
+  minLength: number;
   type?: 'choice' | 'media';
   choices?: Record<string, string>;
-  errorMsg: string;
 }
 
 const STEPS: StepDef[] = [
@@ -17,24 +17,22 @@ const STEPS: StepDef[] = [
       '*Admin Request*\n\nApa yang kamu butuhkan? Jelaskan permintaannya.\n\n_(What do you need? Describe the admin action required.)_',
     required: true,
     minLength: 5,
-    errorMsg: 'Tolong jelaskan permintaanmu dengan lebih detail (minimal beberapa kata).\n\n_Please describe what you need in more detail._',
   },
   {
     id: 'accountAffected',
     question:
       'Akun siapa yang terdampak?\n(email, nama PG, atau nama Farmer)\n\n_(Which account is affected? Email or PG/Farmer name.)_',
     required: true,
-    minLength: 2,
-    errorMsg: 'Tolong berikan email atau nama akun yang terdampak.\n\n_Please provide the affected account email or name._',
+    minLength: 5,
   },
   {
     id: 'urgency',
     question:
       'Seberapa urgent?\n\n1 Rendah (Low)\n2 Sedang (Medium)\n3 Tinggi (High)\n\nBalas 1, 2, atau 3.',
     required: true,
+    minLength: 1,
     type: 'choice',
     choices: { '1': '1', '2': '2', '3': '3' },
-    errorMsg: 'Balas dengan *1* (Rendah), *2* (Sedang), atau *3* (Tinggi).',
   },
   {
     id: 'additionalContext',
@@ -42,26 +40,16 @@ const STEPS: StepDef[] = [
       'Ada info tambahan?\n(error message, nomor invoice, langkah reproduksi, dll)\n\nKetik *SKIP* jika tidak ada.\n\n_(Any additional context? Type SKIP if none.)_',
     required: false,
     minLength: 3,
-    errorMsg: 'Tulis info tambahan, atau ketik *SKIP*.\n\n_Provide additional info, or type SKIP._',
   },
   {
     id: 'screenshot',
     question:
       'Kirim screenshot jika ada.\nKetik *SKIP* jika tidak ada.\n\n_(Send screenshot if available, or type SKIP.)_',
     required: false,
+    minLength: 0,
     type: 'media',
-    errorMsg: 'Kirim foto/video, atau ketik *SKIP*.\n\n_Send a photo/video, or type SKIP._',
   },
 ];
-
-function isGarbageInput(text: string): boolean {
-  if (!text) return true;
-  const cleaned = text.trim();
-  if (cleaned.length === 0) return true;
-  if (cleaned.length === 1 && !/[0-9]/.test(cleaned)) return true;
-  if (/^[^a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF]+$/.test(cleaned)) return true;
-  return false;
-}
 
 export function getFirstQuestion(): string {
   return STEPS[0].question;
@@ -98,7 +86,7 @@ export function processStep(
       session.data._stepIndex = stepIndex + 1;
       return getNextResponse(session);
     }
-    return { error: step.errorMsg };
+    return { error: REJECTION_MSG };
   }
 
   if (step.type === 'choice') {
@@ -108,15 +96,12 @@ export function processStep(
       session.data._stepIndex = stepIndex + 1;
       return getNextResponse(session);
     }
-    return { error: step.errorMsg };
+    return { error: REJECTION_MSG };
   }
 
-  if (isGarbageInput(text)) {
-    return { error: step.errorMsg };
-  }
-
-  if (text.trim().length < (step.minLength || 1)) {
-    return { error: step.errorMsg };
+  const validationError = validateTextInput(text, step.minLength);
+  if (validationError) {
+    return { error: validationError };
   }
 
   session.data[step.id] = text.trim();
