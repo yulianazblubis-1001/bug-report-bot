@@ -1,13 +1,13 @@
 import { sessionStore } from './session';
+import type { BotSession } from './session';
 import * as wati from './services/wati';
 import * as slack from './services/slack';
-import { translateReport } from './services/translate';
-import * as bugFlow from './flows/bugReport';
-import * as adminFlow from './flows/adminRequest';
+import { evaluateReport } from './services/claude-agent';
 import { addReportLog } from './activityLog';
-import { isWhitelisted, REJECTED_MSG } from './whitelist';
+import { isWhitelisted, lookupProfile, REJECTED_MSG } from './whitelist';
 
-const WELCOME_MSG = `Halo! Saya Rize Report Bot.
+function getWelcomeMsg(name: string): string {
+  return `Halo ${name}! 👋
 
 Mau lapor apa?
 
@@ -17,6 +17,7 @@ Mau lapor apa?
 Balas *1* atau *2*.
 
 _(Reply 1 for Bug Report, 2 for Admin Request.)_`;
+}
 
 const INVALID_TYPE_MSG = `Maaf, saya tidak mengerti. Balas dengan:
 
@@ -25,13 +26,20 @@ const INVALID_TYPE_MSG = `Maaf, saya tidak mengerti. Balas dengan:
 
 _(Reply 1 or 2.)_`;
 
+const BUG_START_MSG = `Jelaskan masalahnya. Tulis dengan bahasa kamu sendiri, kirim screenshot/video juga kalau ada 📸
+
+_(Describe the issue in your own words. Send screenshots/videos if available.)_`;
+
+const ADMIN_START_MSG = `Jelaskan apa yang kamu butuhkan. Tulis dengan bahasa kamu sendiri 📝
+
+_(Describe what you need in your own words.)_`;
+
 const CONFIRM_ONLY_MSG = `Di langkah ini, saya hanya mengerti:
 
 *KIRIM* — mengirim laporan
 *ULANG* — mulai dari awal
-Atau kirim foto/video tambahan
 
-_(Type KIRIM to submit, ULANG to restart, or send a photo.)_`;
+_(Type KIRIM to submit, ULANG to restart.)_`;
 
 export async function handleMessage(
   phoneNumber: string,
@@ -48,44 +56,53 @@ export async function handleMessage(
     return;
   }
 
+  const profile = lookupProfile(phoneNumber);
+  const displayName = profile?.name || senderName || phoneNumber;
+
   if (['START', 'MULAI', 'HI', 'HALO', 'HELLO', 'HAI', 'MENU'].includes(upperText)) {
     sessionStore.reset(phoneNumber);
-    sessionStore.create(phoneNumber, senderName);
-    await wati.sendMessage(phoneNumber, WELCOME_MSG);
+    sessionStore.create(phoneNumber, senderName, profile);
+    await wati.sendMessage(phoneNumber, getWelcomeMsg(displayName));
     return;
   }
 
   if (['CANCEL', 'BATAL'].includes(upperText)) {
     sessionStore.reset(phoneNumber);
-    await wati.sendMessage(phoneNumber, 'Laporan dibatalkan. Ketik *START* untuk mulai lagi.\n\n_(Report cancelled. Type START to begin again.)_');
+    await wati.sendMessage(phoneNumber, `Laporan dibatalkan. Ketik *START* untuk mulai lagi, ${displayName}.\n\n_(Report cancelled. Type START to begin again.)_`);
     return;
   }
 
   let currentSession = sessionStore.get(phoneNumber);
 
   if (!currentSession) {
-    currentSession = sessionStore.create(phoneNumber, senderName);
-    await wati.sendMessage(phoneNumber, WELCOME_MSG);
+    currentSession = sessionStore.create(phoneNumber, senderName, profile);
+    await wati.sendMessage(phoneNumber, getWelcomeMsg(displayName));
     return;
   }
 
   if (senderName && senderName !== phoneNumber) {
-    currentSession.senderName = senderName;
+    currentSession.senderName = profile?.name || senderName;
   }
 
   if (currentSession.step === 'SELECT_TYPE') {
     if (cleanText === '1') {
       currentSession.reportType = 'bug';
       currentSession.step = 'COLLECTING';
-      currentSession.data = { _stepIndex: 0 };
-      await wati.sendMessage(phoneNumber, bugFlow.getFirstQuestion());
+      currentSession.conversation = [];
+      currentSession.mediaUrls = [];
+      currentSession.followUpCount = 0;
+      currentSession.parsedReport = null;
+      await wati.sendMessage(phoneNumber, BUG_START_MSG);
       return;
     }
     if (cleanText === '2') {
       currentSession.reportType = 'admin';
       currentSession.step = 'COLLECTING';
-      currentSession.data = { _stepIndex: 0 };
-      await wati.sendMessage(phoneNumber, adminFlow.getFirstQuestion());
+      currentSession.conversation = [];
+      currentSession.mediaUrls = [];
+      currentSession.followUpCount = 0;
+      currentSession.parsedReport = null;
+      await wati.sendMessage(phoneNumber, ADMIN_START_MSG);
       return;
     }
     await wati.sendMessage(phoneNumber, INVALID_TYPE_MSG);
@@ -93,39 +110,68 @@ export async function handleMessage(
   }
 
   if (currentSession.step === 'COLLECTING') {
-    const flow = currentSession.reportType === 'bug' ? bugFlow : adminFlow;
+    const hasMedia = messageType === 'image' || messageType === 'video' || messageType === 'document';
+    const messageMediaUrls: string[] = [];
 
-    const effectiveMediaUrl =
-      messageType === 'image' || messageType === 'video' || messageType === 'document'
-        ? mediaUrl
-        : null;
+    if (hasMedia && mediaUrl) {
+      currentSession.mediaUrls.push(mediaUrl);
+      messageMediaUrls.push(mediaUrl);
+    }
 
-    const result = flow.processStep(currentSession, cleanText, effectiveMediaUrl);
+    if (!cleanText && hasMedia) {
+      currentSession.conversation.push({
+        role: 'user',
+        text: '',
+        mediaUrls: messageMediaUrls,
+      });
 
-    if (result.error) {
-      await wati.sendMessage(phoneNumber, result.error);
+      if (currentSession.conversation.length === 1) {
+        await wati.sendMessage(phoneNumber, 'Terima kasih screenshot-nya! 📸 Bisa jelaskan apa yang terjadi?');
+        currentSession.conversation.push({
+          role: 'assistant',
+          text: 'Terima kasih screenshot-nya! 📸 Bisa jelaskan apa yang terjadi?',
+        });
+        return;
+      }
+    } else {
+      currentSession.conversation.push({
+        role: 'user',
+        text: cleanText,
+        mediaUrls: messageMediaUrls.length > 0 ? messageMediaUrls : undefined,
+      });
+    }
+
+    await wati.sendMessage(phoneNumber, 'Sedang menganalisis laporan kamu... ⏳');
+
+    const result = await evaluateReport(
+      currentSession.conversation,
+      currentSession.reportType!,
+      currentSession.followUpCount
+    );
+
+    currentSession.parsedReport = result.parsedReport;
+
+    if (result.status === 'need_more_info' && result.followUpQuestion && currentSession.followUpCount < 3) {
+      currentSession.followUpCount++;
+      currentSession.conversation.push({
+        role: 'assistant',
+        text: result.followUpQuestion,
+      });
+      await wati.sendMessage(phoneNumber, result.followUpQuestion);
       return;
     }
 
-    if (result.showSummary) {
-      currentSession.step = 'CONFIRMING';
-      await wati.sendMessage(phoneNumber, result.summary!);
-      return;
-    }
-
-    if (result.nextQuestion) {
-      await wati.sendMessage(phoneNumber, result.nextQuestion);
-      return;
-    }
+    currentSession.step = 'CONFIRMING';
+    const summary = buildSummary(currentSession);
+    await wati.sendMessage(phoneNumber, summary);
+    return;
   }
 
   if (currentSession.step === 'CONFIRMING') {
-    if (messageType === 'image' || messageType === 'video') {
-      if (mediaUrl) {
-        currentSession.mediaUrls.push(mediaUrl);
-        await wati.sendMessage(phoneNumber, 'Foto/video ditambahkan!\n\nKetik *KIRIM* untuk mengirim laporan, atau *ULANG* untuk mulai ulang.\n\n_(Media added! Type KIRIM to submit or ULANG to restart.)_');
-        return;
-      }
+    if (hasMedia(messageType) && mediaUrl) {
+      currentSession.mediaUrls.push(mediaUrl);
+      await wati.sendMessage(phoneNumber, 'Foto/video ditambahkan! 📸\n\nKetik *KIRIM* untuk mengirim laporan.\n\n_(Media added! Type KIRIM to submit.)_');
+      return;
     }
 
     if (upperText === 'KIRIM' || upperText === 'SUBMIT' || upperText === 'SEND') {
@@ -135,10 +181,12 @@ export async function handleMessage(
 
     if (upperText === 'ULANG' || upperText === 'RESTART' || upperText === 'EDIT') {
       currentSession.step = 'COLLECTING';
-      currentSession.data = { _stepIndex: 0 };
+      currentSession.conversation = [];
       currentSession.mediaUrls = [];
-      const flow = currentSession.reportType === 'bug' ? bugFlow : adminFlow;
-      await wati.sendMessage(phoneNumber, 'Mulai ulang!\n\n' + flow.getFirstQuestion());
+      currentSession.followUpCount = 0;
+      currentSession.parsedReport = null;
+      const startMsg = currentSession.reportType === 'bug' ? BUG_START_MSG : ADMIN_START_MSG;
+      await wati.sendMessage(phoneNumber, 'Mulai ulang!\n\n' + startMsg);
       return;
     }
 
@@ -147,46 +195,83 @@ export async function handleMessage(
   }
 }
 
-async function submitReport(currentSession: ReturnType<typeof sessionStore.create>): Promise<void> {
-  const phoneNumber = currentSession.phoneNumber;
+function hasMedia(messageType: string): boolean {
+  return messageType === 'image' || messageType === 'video' || messageType === 'document';
+}
+
+function buildSummary(session: BotSession): string {
+  const report = session.parsedReport || {};
+  const mediaCount = session.mediaUrls.length;
+
+  let summary = `📋 *Ringkasan:*\n\n`;
+  summary += `📝 *${report.title || 'Report'}*\n`;
+
+  if (report.description) {
+    summary += `${report.description}\n`;
+  }
+
+  if (session.reportType === 'bug') {
+    if (report.platform || report.appVersion) {
+      summary += `\n📱 Platform: ${report.platform || '—'} | App ${report.appVersion || '—'}`;
+    }
+    if (report.relatedInfo) {
+      summary += `\n🔗 ${report.relatedInfo}`;
+    }
+    if (report.stepsToReproduce) {
+      summary += `\n📋 Steps: ${report.stepsToReproduce}`;
+    }
+  } else {
+    if (report.accountAffected) {
+      summary += `\n👤 Account: ${report.accountAffected}`;
+    }
+    if (report.urgency) {
+      summary += `\n⚡ Urgency: ${report.urgency}`;
+    }
+  }
+
+  if (mediaCount > 0) {
+    summary += `\n📸 ${mediaCount} screenshot/video`;
+  }
+
+  summary += `\n\nKetik *KIRIM* untuk mengirim, atau *ULANG* untuk mulai ulang.`;
+  summary += `\n\n_(Type KIRIM to submit, or ULANG to restart.)_`;
+
+  return summary;
+}
+
+async function submitReport(session: BotSession): Promise<void> {
+  const phoneNumber = session.phoneNumber;
+  const displayName = session.profile?.name || session.senderName;
 
   try {
-    await wati.sendMessage(phoneNumber, 'Sedang memproses laporan...\n\n_(Processing your report...)_');
+    await wati.sendMessage(phoneNumber, 'Sedang mengirim laporan... 📤');
 
-    let translatedData: Record<string, any>;
-    try {
-      translatedData = await translateReport(currentSession.data, currentSession.reportType!);
-    } catch (err: any) {
-      console.error('[Router] Translation failed, using original:', err.message);
-      translatedData = { ...currentSession.data };
-    }
-
-    await slack.postToSlack(currentSession, translatedData, (ts, channel) => {
+    await slack.postToSlack(session, (ts, channel) => {
       sessionStore.storeSlackMapping(ts, channel, {
-        phoneNumber: currentSession.phoneNumber,
-        senderName: currentSession.senderName,
-        reportType: currentSession.reportType!,
+        phoneNumber: session.phoneNumber,
+        senderName: displayName,
+        reportType: session.reportType!,
       });
     });
 
-    const name = currentSession.senderName || phoneNumber;
-    const typeLabel = currentSession.reportType === 'bug' ? 'Bug Report' : 'Admin Request';
+    const typeLabel = session.reportType === 'bug' ? 'Bug Report' : 'Admin Request';
+    const report = session.parsedReport || {};
 
     addReportLog({
-      type: currentSession.reportType!,
-      reporter: name,
+      type: session.reportType!,
+      reporter: displayName,
       phoneNumber,
-      summary: currentSession.reportType === 'bug'
-        ? currentSession.data.whatHappened
-        : currentSession.data.requestDescription,
+      summary: report.title || report.description || 'Report submitted',
       status: 'submitted',
     });
 
-    await wati.sendMessage(
-      phoneNumber,
-      `*${typeLabel} berhasil dikirim!*\n\nTim sudah dinotifikasi. Terima kasih, ${name}!\n\nKetik *START* untuk laporan baru.\n\n_(${typeLabel} submitted successfully! The team has been notified. Type START for a new report.)_`
-    );
+    let successMsg = `✅ *${typeLabel} berhasil dikirim!*\n\nTim sudah dinotifikasi. Terima kasih, ${displayName}! 🙏`;
+    if (session.mediaUrls.length > 0) {
+      successMsg += `\n\nScreenshot / media yang kamu kirim juga sudah dilampirkan di laporan ✅`;
+    }
+    successMsg += `\n\nKetik *START* untuk laporan baru.\n\n_(${typeLabel} submitted successfully! Type START for a new report.)_`;
 
+    await wati.sendMessage(phoneNumber, successMsg);
     sessionStore.reset(phoneNumber);
   } catch (err: any) {
     console.error('[Router] Submit failed:', err.message);

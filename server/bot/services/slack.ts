@@ -16,39 +16,41 @@ function getWIBTimestamp(): string {
   );
 }
 
-function formatTranslatedField(data: Record<string, any>, fieldName: string): string {
-  const translated = data[`${fieldName}_translated`];
-  const original = data[`${fieldName}_original`];
-
-  if (!translated && !data[fieldName]) return '—';
-  if (!translated) return data[fieldName];
-  if (translated === original) return translated;
-
-  return `${translated}\n_Original: ${original}_`;
-}
-
-function buildBugReportBlocks(session: BotSession, data: Record<string, any>): any[] {
+function buildBugReportBlocks(session: BotSession): any[] {
+  const report = session.parsedReport || {};
+  const profile = session.profile;
   const timestamp = getWIBTimestamp();
-  const hasMedia = session.mediaUrls && session.mediaUrls.length > 0;
 
   const blocks: any[] = [
     {
       type: 'header',
-      text: { type: 'plain_text', text: 'BUG REPORT | Rize.farm', emoji: true },
+      text: { type: 'plain_text', text: `🐛 BUG REPORT | ${report.title || 'Bug Report'}`, emoji: true },
     },
     { type: 'divider' },
     {
       type: 'section',
       fields: [
-        { type: 'mrkdwn', text: `*Reporter:*\n${session.senderName} | ${session.phoneNumber}` },
-        { type: 'mrkdwn', text: `*Platform:*\n${data.platform || '—'} | App ${data.appVersion || '—'}` },
+        {
+          type: 'mrkdwn',
+          text: `*👤 Reporter:*\n${profile?.name || session.senderName} (${profile?.zohoEmail || session.phoneNumber})`,
+        },
+        {
+          type: 'mrkdwn',
+          text: `*📍 Area:*\n${profile?.area || '—'}`,
+        },
       ],
     },
     {
       type: 'section',
       fields: [
-        { type: 'mrkdwn', text: `*Account:*\n${data.accountInfo || '—'}` },
-        { type: 'mrkdwn', text: `*Submitted:*\n${timestamp}` },
+        {
+          type: 'mrkdwn',
+          text: `*📱 Phone:*\n+${session.phoneNumber}`,
+        },
+        {
+          type: 'mrkdwn',
+          text: `*🕐 Submitted:*\n${timestamp}`,
+        },
       ],
     },
     { type: 'divider' },
@@ -56,26 +58,32 @@ function buildBugReportBlocks(session: BotSession, data: Record<string, any>): a
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*What Happened:*\n${formatTranslatedField(data, 'whatHappened')}`,
-      },
-    },
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `*Steps to Reproduce:*\n${formatTranslatedField(data, 'stepsToReproduce')}`,
-      },
-    },
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `*Related Info (Task/PG/Farmer/Season):*\n${formatTranslatedField(data, 'relatedInfo')}`,
+        text: `*Description:*\n${report.description || '—'}`,
       },
     },
   ];
 
-  if (hasMedia) {
+  if (report.stepsToReproduce) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Steps to Reproduce:*\n${report.stepsToReproduce}` },
+    });
+  }
+
+  const details: string[] = [];
+  if (report.platform) details.push(`*Platform:* ${report.platform}`);
+  if (report.appVersion) details.push(`*App Version:* ${report.appVersion}`);
+  if (report.category) details.push(`*Category:* ${report.category}`);
+  if (report.relatedInfo) details.push(`*Related:* ${report.relatedInfo}`);
+
+  if (details.length > 0) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: details.join('\n') },
+    });
+  }
+
+  if (session.mediaUrls.length > 0) {
     for (const url of session.mediaUrls) {
       blocks.push({
         type: 'image',
@@ -86,38 +94,48 @@ function buildBugReportBlocks(session: BotSession, data: Record<string, any>): a
   } else {
     blocks.push({
       type: 'context',
-      elements: [{ type: 'mrkdwn', text: 'No screenshot attached' }],
+      elements: [{ type: 'mrkdwn', text: '_No screenshot attached_' }],
     });
   }
 
   return blocks;
 }
 
-function buildAdminRequestBlocks(session: BotSession, data: Record<string, any>): any[] {
+function buildAdminRequestBlocks(session: BotSession): any[] {
+  const report = session.parsedReport || {};
+  const profile = session.profile;
   const timestamp = getWIBTimestamp();
-  const hasMedia = session.mediaUrls && session.mediaUrls.length > 0;
-
-  const urgencyMap: Record<string, string> = { '1': 'Low', '2': 'Medium', '3': 'High' };
-  const urgency = urgencyMap[data.urgency] || data.urgency || '—';
 
   const blocks: any[] = [
     {
       type: 'header',
-      text: { type: 'plain_text', text: 'ADMIN REQUEST | Rize.farm', emoji: true },
+      text: { type: 'plain_text', text: `⚙️ ADMIN REQUEST | ${report.title || 'Admin Request'}`, emoji: true },
     },
     { type: 'divider' },
     {
       type: 'section',
       fields: [
-        { type: 'mrkdwn', text: `*Requestor:*\n${session.senderName} | ${session.phoneNumber}` },
-        { type: 'mrkdwn', text: `*Urgency:*\n${urgency}` },
+        {
+          type: 'mrkdwn',
+          text: `*👤 Requestor:*\n${profile?.name || session.senderName} (${profile?.zohoEmail || session.phoneNumber})`,
+        },
+        {
+          type: 'mrkdwn',
+          text: `*📍 Area:*\n${profile?.area || '—'}`,
+        },
       ],
     },
     {
       type: 'section',
       fields: [
-        { type: 'mrkdwn', text: `*Account Affected:*\n${data.accountAffected || '—'}` },
-        { type: 'mrkdwn', text: `*Submitted:*\n${timestamp}` },
+        {
+          type: 'mrkdwn',
+          text: `*📱 Phone:*\n+${session.phoneNumber}`,
+        },
+        {
+          type: 'mrkdwn',
+          text: `*🕐 Submitted:*\n${timestamp}`,
+        },
       ],
     },
     { type: 'divider' },
@@ -125,19 +143,25 @@ function buildAdminRequestBlocks(session: BotSession, data: Record<string, any>)
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Request:*\n${formatTranslatedField(data, 'requestDescription')}`,
-      },
-    },
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `*Additional Context:*\n${formatTranslatedField(data, 'additionalContext')}`,
+        text: `*Request:*\n${report.description || '—'}`,
       },
     },
   ];
 
-  if (hasMedia) {
+  const details: string[] = [];
+  if (report.accountAffected) details.push(`*Account Affected:* ${report.accountAffected}`);
+  if (report.reason) details.push(`*Reason:* ${report.reason}`);
+  if (report.urgency) details.push(`*Urgency:* ${report.urgency}`);
+  if (report.category) details.push(`*Category:* ${report.category}`);
+
+  if (details.length > 0) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: details.join('\n') },
+    });
+  }
+
+  if (session.mediaUrls.length > 0) {
     for (const url of session.mediaUrls) {
       blocks.push({
         type: 'image',
@@ -148,7 +172,7 @@ function buildAdminRequestBlocks(session: BotSession, data: Record<string, any>)
   } else {
     blocks.push({
       type: 'context',
-      elements: [{ type: 'mrkdwn', text: 'No screenshot attached' }],
+      elements: [{ type: 'mrkdwn', text: '_No screenshot attached_' }],
     });
   }
 
@@ -157,7 +181,6 @@ function buildAdminRequestBlocks(session: BotSession, data: Record<string, any>)
 
 export async function postToSlack(
   session: BotSession,
-  translatedData: Record<string, any>,
   onSlackTs?: (ts: string, channel: string) => void
 ): Promise<any> {
   const webhookUrl =
@@ -172,20 +195,21 @@ export async function postToSlack(
 
   const blocks =
     session.reportType === 'bug'
-      ? buildBugReportBlocks(session, translatedData)
-      : buildAdminRequestBlocks(session, translatedData);
+      ? buildBugReportBlocks(session)
+      : buildAdminRequestBlocks(session);
 
+  const report = session.parsedReport || {};
   const fallbackText =
     session.reportType === 'bug'
-      ? `Bug Report from ${session.senderName}`
-      : `Admin Request from ${session.senderName}`;
+      ? `🐛 Bug Report from ${session.profile?.name || session.senderName}: ${report.title || ''}`
+      : `⚙️ Admin Request from ${session.profile?.name || session.senderName}: ${report.title || ''}`;
 
   try {
     const res = await axios.post(webhookUrl, {
       text: fallbackText,
       blocks: blocks,
     });
-    console.log(`[Slack] Posted ${session.reportType} report from ${session.senderName}`);
+    console.log(`[Slack] Posted ${session.reportType} report from ${session.profile?.name || session.senderName}`);
     if (res.data?.ts && res.data?.channel && onSlackTs) {
       onSlackTs(res.data.ts, res.data.channel);
     }

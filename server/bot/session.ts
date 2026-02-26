@@ -1,12 +1,29 @@
 const SESSION_TTL_MS = 30 * 60 * 1000;
+const MAX_FOLLOWUPS = 3;
+
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  mediaUrls?: string[];
+}
+
+export interface AgronomistProfile {
+  name: string;
+  area: string;
+  personalEmail: string;
+  zohoEmail: string;
+}
 
 export interface BotSession {
   phoneNumber: string;
   senderName: string;
+  profile: AgronomistProfile | null;
   step: 'SELECT_TYPE' | 'COLLECTING' | 'CONFIRMING';
   reportType: 'bug' | 'admin' | null;
-  data: Record<string, any>;
+  conversation: ConversationMessage[];
   mediaUrls: string[];
+  followUpCount: number;
+  parsedReport: Record<string, any> | null;
   lastActivity: number;
   createdAt: number;
 }
@@ -37,14 +54,17 @@ class SessionStore {
     return session;
   }
 
-  create(phoneNumber: string, senderName?: string): BotSession {
+  create(phoneNumber: string, senderName?: string, profile?: AgronomistProfile | null): BotSession {
     const session: BotSession = {
       phoneNumber,
-      senderName: senderName || phoneNumber,
+      senderName: profile?.name || senderName || phoneNumber,
+      profile: profile || null,
       step: 'SELECT_TYPE',
       reportType: null,
-      data: {},
+      conversation: [],
       mediaUrls: [],
+      followUpCount: 0,
+      parsedReport: null,
       lastActivity: Date.now(),
       createdAt: Date.now(),
     };

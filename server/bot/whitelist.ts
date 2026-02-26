@@ -1,34 +1,24 @@
-const HARDCODED_NUMBERS: string[] = [
-];
+import type { AgronomistProfile } from './session';
+import agronomistDb from './agronomist-database.json';
+
+const database: Record<string, AgronomistProfile> = agronomistDb as any;
 
 function cleanNumber(num: string): string {
   return num.replace(/[\+\s\-\(\)]/g, '');
 }
 
-function getWhitelist(): Set<string> {
-  const envNumbers = process.env.WHITELISTED_NUMBERS
-    ? process.env.WHITELISTED_NUMBERS.split(',').map(n => cleanNumber(n.trim())).filter(Boolean)
-    : [];
-
-  const hardcoded = HARDCODED_NUMBERS.map(n => cleanNumber(n));
-
-  return new Set([...hardcoded, ...envNumbers]);
-}
-
-export function getWhitelistCount(): number {
-  return getWhitelist().size;
+export function lookupProfile(phoneNumber: string): AgronomistProfile | null {
+  const cleaned = cleanNumber(phoneNumber);
+  return database[cleaned] || null;
 }
 
 export function isWhitelisted(phoneNumber: string): boolean {
-  const whitelist = getWhitelist();
-
-  if (whitelist.size === 0) {
-    return true;
-  }
-
   const cleaned = cleanNumber(phoneNumber);
+  return !!database[cleaned];
+}
 
-  return whitelist.has(cleaned);
+export function getWhitelistCount(): number {
+  return Object.keys(database).length;
 }
 
 export const REJECTED_MSG = `⚠️ Maaf, nomor kamu belum terdaftar. Hubungi Territory Manager kamu.

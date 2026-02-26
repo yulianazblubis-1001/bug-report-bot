@@ -148,31 +148,19 @@ export default function Dashboard() {
     staleTime: 5000,
   });
 
-  const bugSteps = [
-    "Describe the bug (what happened)",
-    "Steps to reproduce (or SKIP)",
-    "Platform selection (Android / iOS / Web)",
-    "App version (or SKIP)",
-    "Account email or username",
-    "Related info: Task / PG / Farmer / Season (or SKIP)",
-    "Screenshot or video (or SKIP)",
-    "Review summary and confirm with KIRIM",
-  ];
-
-  const adminSteps = [
-    "Describe the admin request",
-    "Account affected (email or name)",
-    "Urgency level (Low / Medium / High)",
-    "Additional context (or SKIP)",
-    "Screenshot (or SKIP)",
-    "Review summary and confirm with KIRIM",
+  const conversationSteps = [
+    "Agronomist types START to begin",
+    "Selects Bug Report (1) or Admin Request (2)",
+    "Describes the issue in their own words (Indonesian)",
+    "Claude AI evaluates and asks smart follow-ups (max 3)",
+    "Bot shows summary for confirmation",
+    "KIRIM to submit — report posted to Slack in English",
   ];
 
   const commands = [
     { cmd: "START / HI / HALO", desc: "Begin a new report" },
     { cmd: "1", desc: "Select Bug Report" },
     { cmd: "2", desc: "Select Admin Request" },
-    { cmd: "SKIP", desc: "Skip optional questions" },
     { cmd: "KIRIM / SUBMIT", desc: "Submit the report" },
     { cmd: "ULANG / RESTART", desc: "Start over" },
     { cmd: "CANCEL / BATAL", desc: "Cancel everything" },
@@ -323,31 +311,14 @@ export default function Dashboard() {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <Bug className="w-4 h-4 text-red-500 dark:text-red-400" />
-                      Bug Report Flow
-                      <Badge variant="secondary" className="text-[10px] ml-auto">7 questions</Badge>
+                      <MessageSquare className="w-4 h-4 text-primary" />
+                      Conversational Flow
+                      <Badge variant="secondary" className="text-[10px] ml-auto">AI-Powered</Badge>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-0">
                     <div className="space-y-0.5">
-                      {bugSteps.map((step, i) => (
-                        <FlowStep key={i} step={step} index={i} />
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <Settings className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                      Admin Request Flow
-                      <Badge variant="secondary" className="text-[10px] ml-auto">5 questions</Badge>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <div className="space-y-0.5">
-                      {adminSteps.map((step, i) => (
+                      {conversationSteps.map((step, i) => (
                         <FlowStep key={i} step={step} index={i} />
                       ))}
                     </div>
@@ -430,10 +401,10 @@ export default function Dashboard() {
                       <div className="flex flex-col gap-2">
                         {([
                           { icon: SiWhatsapp as React.ComponentType<{className?: string}>, text: "Agronomist sends message via WhatsApp" },
-                          { icon: MessageSquare as React.ComponentType<{className?: string}>, text: "Bot guides through structured questions" },
-                          { icon: CheckCircle2 as React.ComponentType<{className?: string}>, text: "Validates answers, rejects garbage input" },
-                          { icon: Globe as React.ComponentType<{className?: string}>, text: "Translates ID/VN to English via Claude AI" },
-                          { icon: SiSlack as React.ComponentType<{className?: string}>, text: "Posts formatted card to Slack channel" },
+                          { icon: MessageSquare as React.ComponentType<{className?: string}>, text: "Claude AI guides conversation naturally" },
+                          { icon: CheckCircle2 as React.ComponentType<{className?: string}>, text: "Asks smart follow-ups (max 3) in Indonesian" },
+                          { icon: Globe as React.ComponentType<{className?: string}>, text: "Translates and structures report in English" },
+                          { icon: SiSlack as React.ComponentType<{className?: string}>, text: "Posts enriched card to Slack with profile" },
                           { icon: Smartphone as React.ComponentType<{className?: string}>, text: "Slack reaction notifies user on WhatsApp" },
                         ]).map((item, i) => (
                           <div key={i} className="flex items-center gap-3 py-1.5">
@@ -542,10 +513,10 @@ export default function Dashboard() {
                   </p>
                   <div className="flex flex-col gap-1.5">
                     {[
-                      "State machine conversation flow",
-                      "No AI during data collection",
-                      "Input validation on every step",
-                      "Translation only at submit time",
+                      "Claude AI conversational agent",
+                      "Smart follow-ups (max 3 questions)",
+                      "Auto-translation to English",
+                      "70 agronomist profiles loaded",
                     ].map((f) => (
                       <div key={f} className="flex items-center gap-2">
                         <CheckCircle2 className="w-3 h-3 text-primary flex-shrink-0" />

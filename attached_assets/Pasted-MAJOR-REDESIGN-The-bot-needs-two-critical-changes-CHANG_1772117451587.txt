@@ -1,0 +1,156 @@
+MAJOR REDESIGN: The bot needs two critical changes.
+
+## CHANGE 1: Auto-Identify Reporter from Whitelist
+
+The whitelist Google Spreadsheet has these columns:
+- Phone Number
+- Name
+- Area
+- Personal Email
+- Zoho Mail
+
+Instead of just storing phone numbers, store a FULL PROFILE for each person.
+
+Create a file called `agronomist-database.json` with this structure:
+{
+  "628123456789": {
+    "name": "Irma Nuraenah",
+    "area": "Indramayu",
+    "personalEmail": "irmanuraenah642@gmail.com",
+    "zohoEmail": "irma.nuraenah@rize-ops.farm"
+  },
+  "628198765432": {
+    "name": "Aditia Pamungkas",
+    "area": "Gawi",
+    "personalEmail": "aditia.pamungkas18@gmail.com",
+    "zohoEmail": "aditia.pamungkas@rize-ops.farm"
+  }
+}
+
+When a whitelisted number messages the bot:
+- Auto-lookup their profile from this database
+- Use their name in greetings: "Halo Irma! 👋"
+- Auto-fill their account info in the Slack report (name, zoho email, area)
+- NEVER ask them "what is your email/account?" — we already know
+
+The Slack report card should always include:
+👤 Reporter: Irma Nuraenah (irma.nuraenah@rize-ops.farm)
+📍 Area: Indramayu
+📱 Phone: +628123456789
+
+## CHANGE 2: Claude as Smart Agent (NOT a rigid form)
+
+REMOVE the step-by-step rigid form. Instead, use Claude AI as a 
+conversational agent that intelligently guides the user.
+
+### How it works:
+
+1. User starts a report (chooses Bug Report or Admin Request)
+
+2. Bot says: "Jelaskan masalahnya. Tulis dengan bahasa kamu sendiri, 
+   kirim screenshot/video juga kalau ada 📸"
+
+3. User sends their message (could be text, image, or both).
+   Examples of real reports we receive:
+   - "Di rize cuma 1 doank yang tercatat, 3 lagi menghilang" + screenshot
+   - "VLP Error atas nama petani Widodo" + error screenshot
+   - "buka my task, klik tanggal task, klik task collect money, 
+      reschedule > reason: Petani gagal panen"
+   
+4. Bot sends the user's message + any images to Claude AI with this system prompt:
+
+   "You are a QA assistant for Rize.farm, an agri-fintech app used by 
+   agronomists in Indonesia and Vietnam. 
+   
+   The user just submitted a report. Your job is to evaluate if we have 
+   enough information to create a useful ticket for the engineering team.
+   
+   REQUIRED information for a BUG REPORT:
+   - What happened (clear description of the problem)
+   - What they were trying to do (context)
+   - App version
+   - Platform (Android/iOS/Web)
+   - Related info: PG name / Farmer name / Task name (if relevant)
+   
+   REQUIRED for ADMIN REQUEST:
+   - What they need done
+   - Which account/farmer/PG is affected
+   - Why (reason/context)
+   
+   Analyze what the user provided. If critical information is MISSING, 
+   ask ONE follow-up question at a time in casual Indonesian.
+   
+   RULES:
+   - Ask in casual, friendly Indonesian (like chatting with a coworker)
+   - Ask only ONE question at a time, not multiple
+   - If they sent a screenshot, acknowledge it
+   - If they forgot app version, ask: 'Versi app-nya berapa ya? 
+     Bisa dicek di Settings 📱'
+   - If the description is vague, ask: 'Bisa jelaskan lebih detail? 
+     Misalnya lagi di halaman apa, tekan tombol apa?'
+   - If PG/Farmer info is needed but missing, ask for it
+   - Do NOT ask for information that's not relevant to their issue
+   - Do NOT ask more than 3 follow-up questions total
+   - After getting enough info, say REPORT_READY
+   
+   Return JSON:
+   {
+     'status': 'need_more_info' or 'ready',
+     'followUpQuestion': 'question in Indonesian' (if need_more_info),
+     'parsedReport': {  (if ready)
+       'title': 'short English title summarizing the issue',
+       'description': 'English translation of what happened',
+       'stepsToReproduce': 'translated steps if provided',
+       'relatedInfo': 'PG/Farmer/Task names',
+       'platform': 'Android/iOS/Web if mentioned',
+       'appVersion': 'version if provided',
+       'category': 'ui_bug/crash/data_error/feature_request/admin/other'
+     }
+   }"
+
+5. If Claude returns 'need_more_info', send the follow-up question to 
+   the user and wait for their reply. Then send EVERYTHING (original 
+   message + follow-ups) back to Claude for re-evaluation.
+
+6. If Claude returns 'ready', show the parsed summary to the user:
+   "📋 Ringkasan:
+    📝 [title in English + original description]
+    📱 Platform: [platform] | App [version]
+    🔗 [related info]
+    📸 [screenshot count]
+    
+    Ketik KIRIM untuk mengirim, atau ULANG untuk mulai ulang."
+
+7. On KIRIM, post to Slack with the auto-filled reporter profile.
+
+### Important behaviors:
+- Track a conversation history array for each session
+- Send ALL previous messages to Claude each time (so it has full context)
+- Maximum 3 follow-up questions, then submit whatever we have
+- After submitting, show: "Screenshot / media yang kamu kirim juga 
+  sudah dilampirkan di laporan ✅"
+- If user sends JUST a screenshot with no text, bot should ask: 
+  "Terima kasih screenshot-nya! 📸 Bisa jelaskan apa yang terjadi?"
+- If user sends a video, acknowledge it and ask for description if none
+
+### Example conversation flow:
+
+User: [sends screenshot + "data collection error"]
+Bot: "Terima kasih reportnya! 📸 Screenshot sudah diterima.
+      Versi app-nya berapa ya? Bisa dicek di Settings 📱"
+User: "1.19.1"
+Bot: "Ini terjadi di PG/Farmer siapa? Dan lagi di halaman apa?"
+User: "PG Pak Agus, lagi di halaman task collect money"
+Bot: "📋 Ringkasan:
+      📝 Data collection error on task collect money page for PG Pak Agus
+      📱 App: 1.19.1
+      🔗 PG: Pak Agus | Task: Collect Money
+      📸 1 screenshot
+      
+      Ketik KIRIM atau ULANG"
+User: "KIRIM"
+Bot: "✅ Bug Report berhasil dikirim! Tim engineering sudah dinotifikasi. 
+      Terima kasih, Irma! 🙏"
+
+Please rebuild the message handler with this new approach.
+Do NOT use rigid step-by-step forms anymore.
