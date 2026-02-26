@@ -49,15 +49,20 @@ export async function registerRoutes(
 
   async function webhookHandler(req: any, res: any) {
     try {
-      console.log("=== WATI PAYLOAD ===");
-      console.log(JSON.stringify(req.body, null, 2));
-      console.log("===================");
       const body = req.body;
+      const messageType = body.type || "text";
+
+      if (messageType === 'image' || messageType === 'video' || messageType === 'document') {
+        console.log("=== MEDIA PAYLOAD ===");
+        console.log(JSON.stringify(body, null, 2));
+        console.log("===================");
+      } else {
+        console.log(`[Webhook] Incoming: type=${messageType}, text="${(body.text || body.message || '').substring(0, 100)}"`);
+      }
 
       const phoneNumber = body.waId || body.whatsappNumber || body.from;
       const senderName = body.senderName || body.pushName || body.name || phoneNumber;
       const text = body.text || body.message || body.body || "";
-      const messageType = body.type || "text";
 
       let mediaUrl: string | null = null;
       if (typeof body.data === 'string' && body.data.startsWith('http')) {
@@ -68,7 +73,11 @@ export async function registerRoutes(
         mediaUrl = body.mediaUrl;
       } else if (body.data?.media?.url) {
         mediaUrl = body.data.media.url;
+      } else if (body.attachment?.url) {
+        mediaUrl = body.attachment.url;
       }
+
+      console.log(`[Webhook] EXTRACTED MEDIA URL: ${mediaUrl}`);
 
       if (!phoneNumber) {
         console.warn("[Webhook] No phone number in payload:", JSON.stringify(body).substring(0, 200));

@@ -225,16 +225,25 @@ async function uploadFileToSlack(
   index: number
 ): Promise<void> {
   try {
+    console.log(`[Slack Upload] Starting download from: ${mediaUrl}`);
     const response = await axios.get(mediaUrl, { responseType: 'arraybuffer', timeout: 30000 });
     const fileBuffer = Buffer.from(response.data);
+    const contentType = response.headers['content-type'] || 'application/octet-stream';
+    console.log(`[Slack Upload] Downloaded ${fileBuffer.length} bytes, content-type: ${contentType}`);
+
     const ext = getFileExtension(mediaUrl);
-    const filename = `screenshot_${index + 1}.${ext}`;
+    const isVideo = ['mp4', 'mov', 'avi', 'webm', 'mkv'].includes(ext);
+    const filename = isVideo ? `video_${index + 1}.${ext}` : `screenshot_${index + 1}.${ext}`;
+    const label = isVideo ? `Video ${index + 1}` : `Screenshot ${index + 1}`;
 
     const form = new FormData();
-    form.append('file', fileBuffer, { filename, contentType: response.headers['content-type'] || 'image/jpeg' });
+    form.append('file', fileBuffer, { filename, contentType });
     form.append('channels', channelId);
     form.append('thread_ts', threadTs);
-    form.append('initial_comment', `Screenshot ${index + 1}`);
+    form.append('initial_comment', label);
+    form.append('title', label);
+
+    console.log(`[Slack Upload] Uploading ${filename} to channel ${channelId} thread ${threadTs}...`);
 
     const uploadRes = await axios.post('https://slack.com/api/files.upload', form, {
       headers: {
@@ -245,12 +254,16 @@ async function uploadFileToSlack(
     });
 
     if (!uploadRes.data.ok) {
-      console.error(`[Slack] File upload error for screenshot ${index + 1}:`, uploadRes.data.error);
+      console.error(`[Slack Upload] API error for ${filename}:`, uploadRes.data.error);
+      console.error(`[Slack Upload] Full response:`, JSON.stringify(uploadRes.data));
     } else {
-      console.log(`[Slack] Uploaded screenshot_${index + 1}.${ext} to thread`);
+      console.log(`[Slack Upload] Successfully uploaded ${filename} to thread`);
     }
   } catch (err: any) {
-    console.error(`[Slack] Failed to upload screenshot ${index + 1}:`, err.message);
+    console.error(`[Slack Upload] Failed for file ${index + 1}:`, err.message);
+    if (err.response) {
+      console.error(`[Slack Upload] Response status: ${err.response.status}, data:`, JSON.stringify(err.response.data).substring(0, 500));
+    }
   }
 }
 
