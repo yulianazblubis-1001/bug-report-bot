@@ -1,4 +1,5 @@
 import axios from 'axios';
+import FormData from 'form-data';
 import type { BotSession } from '../session';
 
 function getWIBTimestamp(): string {
@@ -14,6 +15,22 @@ function getWIBTimestamp(): string {
       hour12: false,
     }) + ' WIB'
   );
+}
+
+function buildMediaLine(mediaCount: number): any {
+  if (mediaCount > 0) {
+    return {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Screenshots:* ${mediaCount} file${mediaCount > 1 ? 's' : ''} attached below`,
+      },
+    };
+  }
+  return {
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: 'No photos attached' }],
+  };
 }
 
 function buildBugReportBlocks(session: BotSession): any[] {
@@ -100,20 +117,7 @@ function buildBugReportBlocks(session: BotSession): any[] {
 
   blocks.push({ type: 'divider' });
 
-  if (session.mediaUrls.length > 0) {
-    for (const url of session.mediaUrls) {
-      blocks.push({
-        type: 'image',
-        image_url: url,
-        alt_text: 'Screenshot from reporter',
-      });
-    }
-  } else {
-    blocks.push({
-      type: 'context',
-      elements: [{ type: 'mrkdwn', text: 'No photos attached' }],
-    });
-  }
+  blocks.push(buildMediaLine(session.mediaUrls.length));
 
   blocks.push({
     type: 'context',
@@ -194,20 +198,7 @@ function buildAdminRequestBlocks(session: BotSession): any[] {
 
   blocks.push({ type: 'divider' });
 
-  if (session.mediaUrls.length > 0) {
-    for (const url of session.mediaUrls) {
-      blocks.push({
-        type: 'image',
-        image_url: url,
-        alt_text: 'Screenshot from reporter',
-      });
-    }
-  } else {
-    blocks.push({
-      type: 'context',
-      elements: [{ type: 'mrkdwn', text: 'No photos attached' }],
-    });
-  }
+  blocks.push(buildMediaLine(session.mediaUrls.length));
 
   blocks.push({
     type: 'context',
@@ -215,6 +206,52 @@ function buildAdminRequestBlocks(session: BotSession): any[] {
   });
 
   return blocks;
+}
+
+function getFileExtension(url: string): string {
+  const cleanUrl = url.split('?')[0];
+  const ext = cleanUrl.split('.').pop()?.toLowerCase() || '';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) return ext;
+  if (['mp4', 'mov', 'avi', 'webm', 'mkv'].includes(ext)) return ext;
+  if (['pdf', 'doc', 'docx', 'xls', 'xlsx'].includes(ext)) return ext;
+  return 'jpg';
+}
+
+async function uploadFileToSlack(
+  botToken: string,
+  channelId: string,
+  threadTs: string,
+  mediaUrl: string,
+  index: number
+): Promise<void> {
+  try {
+    const response = await axios.get(mediaUrl, { responseType: 'arraybuffer', timeout: 30000 });
+    const fileBuffer = Buffer.from(response.data);
+    const ext = getFileExtension(mediaUrl);
+    const filename = `screenshot_${index + 1}.${ext}`;
+
+    const form = new FormData();
+    form.append('file', fileBuffer, { filename, contentType: response.headers['content-type'] || 'image/jpeg' });
+    form.append('channels', channelId);
+    form.append('thread_ts', threadTs);
+    form.append('initial_comment', `Screenshot ${index + 1}`);
+
+    const uploadRes = await axios.post('https://slack.com/api/files.upload', form, {
+      headers: {
+        Authorization: `Bearer ${botToken}`,
+        ...form.getHeaders(),
+      },
+      maxContentLength: 50 * 1024 * 1024,
+    });
+
+    if (!uploadRes.data.ok) {
+      console.error(`[Slack] File upload error for screenshot ${index + 1}:`, uploadRes.data.error);
+    } else {
+      console.log(`[Slack] Uploaded screenshot_${index + 1}.${ext} to thread`);
+    }
+  } catch (err: any) {
+    console.error(`[Slack] Failed to upload screenshot ${index + 1}:`, err.message);
+  }
 }
 
 export async function postToSlack(
@@ -251,11 +288,21 @@ export async function postToSlack(
         throw new Error(`Slack API: ${res.data.error}`);
       }
 
-      console.log(`[Slack] Posted ${session.reportType} report via Web API from ${session.profile?.name || session.senderName} (ts: ${res.data.ts})`);
+      const messageTs = res.data.ts;
+      const messageChannel = res.data.channel;
 
-      if (res.data.ts && res.data.channel && onSlackTs) {
-        onSlackTs(res.data.ts, res.data.channel);
+      console.log(`[Slack] Posted ${session.reportType} report via Web API from ${session.profile?.name || session.senderName} (ts: ${messageTs})`);
+
+      if (messageTs && messageChannel && onSlackTs) {
+        onSlackTs(messageTs, messageChannel);
       }
+
+      if (session.mediaUrls.length > 0 && messageTs) {
+        for (let i = 0; i < session.mediaUrls.length; i++) {
+          await uploadFileToSlack(botToken, channelId, messageTs, session.mediaUrls[i], i);
+        }
+      }
+
       return res.data;
     } catch (err: any) {
       console.error('[Slack] Web API failed:', err.response?.data || err.message);
