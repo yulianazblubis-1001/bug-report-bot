@@ -17,6 +17,10 @@ export const botStatusSchema = z.object({
     admins: z.number(),
     today: z.number(),
   }),
+  whitelist: z.object({
+    enabled: z.boolean(),
+    count: z.number(),
+  }).optional(),
 });
 
 export type BotStatus = z.infer<typeof botStatusSchema>;

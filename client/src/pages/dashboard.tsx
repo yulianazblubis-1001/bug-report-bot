@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Shield,
   Smartphone,
+  Users,
   Zap,
   ExternalLink,
   ArrowRight,
@@ -490,6 +491,21 @@ export default function Dashboard() {
                       configured={status?.config.slackSigning ?? false}
                       icon={Key}
                     />
+                    <div className="flex items-center justify-between py-2.5">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-sm" data-testid="text-whitelist-label">Whitelist</span>
+                      </div>
+                      <Badge
+                        variant={status?.whitelist?.enabled ? "default" : "secondary"}
+                        className="text-xs"
+                        data-testid="badge-whitelist-status"
+                      >
+                        {status?.whitelist?.enabled
+                          ? `${status.whitelist.count} numbers`
+                          : "Open (all allowed)"}
+                      </Badge>
+                    </div>
                   </div>
                 )}
               </CardContent>

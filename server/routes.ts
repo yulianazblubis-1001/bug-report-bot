@@ -5,6 +5,7 @@ import { handleMessage } from "./bot/router";
 import { sessionStore } from "./bot/session";
 import { sendMessage } from "./bot/services/wati";
 import { getReportLogs, getStats } from "./bot/activityLog";
+import { isWhitelisted, getWhitelistCount } from "./bot/whitelist";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -20,6 +21,8 @@ export async function registerRoutes(
       slackSigning: !!process.env.SLACK_SIGNING_SECRET,
     };
 
+    const whitelistNumbers = getWhitelistCount();
+
     const allConfigured = Object.values(configStatus).every(Boolean);
 
     res.json({
@@ -28,6 +31,10 @@ export async function registerRoutes(
       uptime: process.uptime(),
       config: configStatus,
       stats: getStats(),
+      whitelist: {
+        enabled: whitelistNumbers > 0,
+        count: whitelistNumbers,
+      },
     });
   });
 

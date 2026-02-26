@@ -5,6 +5,7 @@ import { translateReport } from './services/translate';
 import * as bugFlow from './flows/bugReport';
 import * as adminFlow from './flows/adminRequest';
 import { addReportLog } from './activityLog';
+import { isWhitelisted, REJECTED_MSG } from './whitelist';
 
 const WELCOME_MSG = `Halo! Saya Rize Report Bot.
 
@@ -41,6 +42,11 @@ export async function handleMessage(
 ): Promise<void> {
   const cleanText = text ? text.trim() : '';
   const upperText = cleanText.toUpperCase();
+
+  if (!isWhitelisted(phoneNumber)) {
+    await wati.sendMessage(phoneNumber, REJECTED_MSG);
+    return;
+  }
 
   if (['START', 'MULAI', 'HI', 'HALO', 'HELLO', 'HAI', 'MENU'].includes(upperText)) {
     sessionStore.reset(phoneNumber);

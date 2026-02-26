@@ -22,6 +22,8 @@ A WhatsApp chatbot that guides Rize.farm agronomists through structured bug repo
 | `server/bot/services/wati.ts` | WATI API wrapper |
 | `server/bot/services/slack.ts` | Slack Block Kit formatter |
 | `server/bot/services/translate.ts` | Claude AI translation service |
+| `server/bot/whitelist.ts` | Phone number whitelist gate |
+| `server/bot/flows/validation.ts` | Shared input validation rules |
 
 ### Frontend
 | File | Purpose |
@@ -42,10 +44,12 @@ A WhatsApp chatbot that guides Rize.farm agronomists through structured bug repo
 - `ANTHROPIC_API_KEY` — Claude AI key for translation
 - `SLACK_SIGNING_SECRET` — Slack signature verification
 - `SESSION_SECRET` — Express session secret
+- `WHITELISTED_NUMBERS` — Comma-separated phone numbers (e.g. `628123456789,628198765432`). If empty, all numbers allowed
 
 ## How It Works
 1. Agronomist sends WhatsApp message via WATI
-2. Bot asks questions one at a time (state machine)
-3. Validates answers (rejects garbage input)
-4. On submit: translates with Claude AI, posts to Slack
-5. Slack team reacts `:done:` / `:solve:` → WhatsApp notification
+2. **Whitelist check** — rejects unregistered numbers before any processing
+3. Bot asks questions one at a time (state machine)
+4. Validates answers (rejects garbage input like `-`, `.`, short text)
+5. On submit: translates with Claude AI, posts to Slack
+6. Slack team reacts `:done:` / `:solve:` → WhatsApp notification
