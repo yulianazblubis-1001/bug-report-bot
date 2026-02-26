@@ -1,18 +1,34 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+export const botStatusSchema = z.object({
+  status: z.enum(["ready", "partial"]),
+  activeSessions: z.number(),
+  uptime: z.number(),
+  config: z.object({
+    wati: z.boolean(),
+    slackBug: z.boolean(),
+    slackAdmin: z.boolean(),
+    anthropic: z.boolean(),
+    slackSigning: z.boolean(),
+  }),
+  stats: z.object({
+    total: z.number(),
+    bugs: z.number(),
+    admins: z.number(),
+    today: z.number(),
+  }),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+export type BotStatus = z.infer<typeof botStatusSchema>;
+
+export const reportLogSchema = z.object({
+  id: z.number(),
+  type: z.string(),
+  reporter: z.string(),
+  phoneNumber: z.string(),
+  summary: z.string(),
+  status: z.string(),
+  timestamp: z.string(),
 });
 
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
+export type ReportLog = z.infer<typeof reportLogSchema>;
