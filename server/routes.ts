@@ -15,8 +15,9 @@ export async function registerRoutes(
   app.get("/api/bot/status", (_req, res) => {
     const configStatus = {
       wati: !!(process.env.WATI_API_ENDPOINT && process.env.WATI_TOKEN),
-      slackBug: !!process.env.SLACK_WEBHOOK_BUG,
-      slackAdmin: !!process.env.SLACK_WEBHOOK_ADMIN,
+      slackBug: !!(process.env.SLACK_CHANNEL_BUG || process.env.SLACK_WEBHOOK_BUG),
+      slackAdmin: !!(process.env.SLACK_CHANNEL_ADMIN || process.env.SLACK_WEBHOOK_ADMIN),
+      slackBot: !!process.env.SLACK_BOT_TOKEN,
       anthropic: !!process.env.ANTHROPIC_API_KEY,
       slackSigning: !!process.env.SLACK_SIGNING_SECRET,
     };
@@ -96,7 +97,7 @@ export async function registerRoutes(
   app.post("/api/bot/webhook", webhookHandler);
   app.get("/api/bot/webhook", webhookGetHandler);
 
-  app.post("/slack-events", async (req, res) => {
+  async function slackEventsHandler(req: any, res: any) {
     try {
       let body: any;
       if (Buffer.isBuffer(req.body)) {
@@ -133,25 +134,32 @@ export async function registerRoutes(
         const itemTs = body.event.item?.ts;
         const channelId = body.event.item?.channel;
 
+        console.log(`[Slack Events] reaction_added: emoji="${reaction}" ts=${itemTs} channel=${channelId}`);
+
         if (!itemTs || !channelId) return;
 
         const mapping = sessionStore.getSlackMapping(itemTs, channelId);
-        if (!mapping) return;
+        if (!mapping) {
+          console.log(`[Slack Events] No mapping found for ${channelId}:${itemTs}`);
+          return;
+        }
+
+        console.log(`[Slack Events] Found mapping for ${mapping.senderName} (${mapping.phoneNumber})`);
 
         if (reaction === "done") {
           await sendMessage(
             mapping.phoneNumber,
-            `✅ Halo! Laporan kamu sudah di-DONE oleh tim. Masalahnya sudah diperbaiki, silakan coba lagi! 🙏`
+            `Halo ${mapping.senderName}! Laporan kamu sudah ditandai DONE oleh tim. Masalahnya sudah diperbaiki, silakan coba lagi.\n\n_(Your report has been marked DONE. The issue has been fixed, please try again.)_`
           );
-          console.log(`[Slack] :done: reaction -> notified ${mapping.phoneNumber}`);
+          console.log(`[Slack Events] :done: -> notified ${mapping.phoneNumber}`);
         }
 
-        if (reaction === "solve") {
+        if (reaction === "solve" || reaction === "solved") {
           await sendMessage(
             mapping.phoneNumber,
-            `🟢 Halo! Laporan kamu sudah SOLVED! Silakan cek ya. 🙏`
+            `Halo ${mapping.senderName}! Laporan kamu sudah SOLVED. Silakan cek ya.\n\n_(Your report has been SOLVED. Please check.)_`
           );
-          console.log(`[Slack] :solve: reaction -> notified ${mapping.phoneNumber}`);
+          console.log(`[Slack Events] :solve: -> notified ${mapping.phoneNumber}`);
         }
       }
     } catch (err: any) {
@@ -160,7 +168,10 @@ export async function registerRoutes(
         res.status(200).json({ status: "error" });
       }
     }
-  });
+  }
+
+  app.post("/slack-events", slackEventsHandler);
+  app.post("/api/bot/slack-events", slackEventsHandler);
 
   return httpServer;
 }

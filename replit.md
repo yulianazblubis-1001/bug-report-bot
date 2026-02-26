@@ -49,11 +49,22 @@ A WhatsApp chatbot that guides Rize.farm agronomists through bug reports or admi
 ## Environment Variables
 - `WATI_API_ENDPOINT` — WATI API base URL
 - `WATI_TOKEN` — WATI Bearer token
-- `SLACK_WEBHOOK_BUG` — Slack webhook for bug reports
-- `SLACK_WEBHOOK_ADMIN` — Slack webhook for admin requests
+- `SLACK_WEBHOOK_BUG` — Slack webhook for bug reports (fallback)
+- `SLACK_WEBHOOK_ADMIN` — Slack webhook for admin requests (fallback)
+- `SLACK_BOT_TOKEN` — Slack Bot User OAuth Token (xoxb-) for Web API posting + reaction events
+- `SLACK_CHANNEL_BUG` — Slack channel ID for bug reports (C085L46D50A)
+- `SLACK_CHANNEL_ADMIN` — Slack channel ID for admin requests (needs setup)
 - `ANTHROPIC_API_KEY` — Claude AI key for conversation agent
 - `SLACK_SIGNING_SECRET` — Slack signature verification
 - `SESSION_SECRET` — Express session secret
+
+## Slack Integration
+- Primary: Uses Slack Web API (`chat.postMessage`) with `SLACK_BOT_TOKEN` + channel IDs for posting — returns message `ts` for reaction mapping
+- Fallback: Uses incoming webhooks if bot token/channel not configured (no reaction mapping)
+- Slack Events endpoint: `/api/bot/slack-events` and `/slack-events` — handles `reaction_added` events
+- Reactions: `:done:` and `:solve:` emoji reactions trigger WhatsApp notification to the reporter
+- Bot needs OAuth scopes: chat:write, reactions:read, files:write
+- Bot must be invited to both channels in Slack
 
 ## How It Works
 1. Agronomist sends WhatsApp message via WATI

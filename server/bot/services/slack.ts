@@ -221,16 +221,6 @@ export async function postToSlack(
   session: BotSession,
   onSlackTs?: (ts: string, channel: string) => void
 ): Promise<any> {
-  const webhookUrl =
-    session.reportType === 'bug'
-      ? process.env.SLACK_WEBHOOK_BUG
-      : process.env.SLACK_WEBHOOK_ADMIN;
-
-  if (!webhookUrl) {
-    console.error(`[Slack] No webhook URL set for ${session.reportType}`);
-    return null;
-  }
-
   const blocks =
     session.reportType === 'bug'
       ? buildBugReportBlocks(session)
@@ -241,18 +231,57 @@ export async function postToSlack(
 
   console.log("MEDIA URLS IN SESSION:", session.mediaUrls);
 
+  const botToken = process.env.SLACK_BOT_TOKEN;
+  const channelId = session.reportType === 'bug'
+    ? process.env.SLACK_CHANNEL_BUG
+    : process.env.SLACK_CHANNEL_ADMIN;
+
+  if (botToken && channelId) {
+    try {
+      const res = await axios.post('https://slack.com/api/chat.postMessage', {
+        channel: channelId,
+        text: fallbackText,
+        blocks: blocks,
+      }, {
+        headers: { Authorization: `Bearer ${botToken}` },
+      });
+
+      if (!res.data.ok) {
+        console.error('[Slack] Web API error:', res.data.error);
+        throw new Error(`Slack API: ${res.data.error}`);
+      }
+
+      console.log(`[Slack] Posted ${session.reportType} report via Web API from ${session.profile?.name || session.senderName} (ts: ${res.data.ts})`);
+
+      if (res.data.ts && res.data.channel && onSlackTs) {
+        onSlackTs(res.data.ts, res.data.channel);
+      }
+      return res.data;
+    } catch (err: any) {
+      console.error('[Slack] Web API failed:', err.response?.data || err.message);
+      console.log('[Slack] Falling back to webhook...');
+    }
+  }
+
+  const webhookUrl =
+    session.reportType === 'bug'
+      ? process.env.SLACK_WEBHOOK_BUG
+      : process.env.SLACK_WEBHOOK_ADMIN;
+
+  if (!webhookUrl) {
+    console.error(`[Slack] No webhook URL or bot token configured for ${session.reportType}`);
+    throw new Error('No Slack posting method available');
+  }
+
   try {
     const res = await axios.post(webhookUrl, {
       text: fallbackText,
       blocks: blocks,
     });
-    console.log(`[Slack] Posted ${session.reportType} report from ${session.profile?.name || session.senderName}`);
-    if (res.data?.ts && res.data?.channel && onSlackTs) {
-      onSlackTs(res.data.ts, res.data.channel);
-    }
+    console.log(`[Slack] Posted ${session.reportType} report via webhook from ${session.profile?.name || session.senderName} (no ts available for reaction mapping)`);
     return res.data;
   } catch (err: any) {
-    console.error('[Slack] Error posting:', err.response?.data || err.message);
+    console.error('[Slack] Webhook error:', err.response?.data || err.message);
     throw err;
   }
 }
