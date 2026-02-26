@@ -121,19 +121,17 @@ export async function registerRoutes(
         if (!mapping) return;
 
         if (reaction === "done") {
-          const name = mapping.senderName || mapping.phoneNumber;
           await sendMessage(
             mapping.phoneNumber,
-            `Halo ${name}!\n\nLaporan kamu sudah ditandai *DONE* oleh tim engineering!\n\nMasalahnya sudah diperbaiki. Silakan update app kamu dan coba lagi.\n\nKalau masih bermasalah, ketik *START* untuk buat laporan baru.\n\n_(Your report has been marked as DONE! The issue has been fixed.)_`
+            `✅ Halo! Laporan kamu sudah di-DONE oleh tim. Masalahnya sudah diperbaiki, silakan coba lagi! 🙏`
           );
           console.log(`[Slack] :done: reaction -> notified ${mapping.phoneNumber}`);
         }
 
         if (reaction === "solve") {
-          const name = mapping.senderName || mapping.phoneNumber;
           await sendMessage(
             mapping.phoneNumber,
-            `Halo ${name}!\n\nLaporan kamu sudah ditandai *SOLVED*!\n\nTim sudah menyelesaikan permintaanmu. Silakan cek dan konfirmasi ya.\n\nKalau ada masalah lain, ketik *START* untuk laporan baru.\n\n_(Your report has been marked as SOLVED! Please verify and confirm.)_`
+            `🟢 Halo! Laporan kamu sudah SOLVED! Silakan cek ya. 🙏`
           );
           console.log(`[Slack] :solve: reaction -> notified ${mapping.phoneNumber}`);
         }
