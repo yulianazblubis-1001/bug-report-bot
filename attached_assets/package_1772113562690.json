@@ -1,0 +1,17 @@
+{
+  "name": "rize-whatsapp-reporter",
+  "version": "1.0.0",
+  "description": "WhatsApp → Slack bug & admin request reporter for Rize.farm",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0",
+    "express": "^4.18.0",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "crypto": "^1.0.1"
+  }
+}
