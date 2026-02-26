@@ -46,7 +46,7 @@ export async function registerRoutes(
     res.json({ status: "pong", timestamp: Date.now() });
   });
 
-  app.post("/webhook", async (req, res) => {
+  async function webhookHandler(req: any, res: any) {
     try {
       console.log("WEBHOOK HIT:", JSON.stringify(req.body).substring(0, 500));
       const body = req.body;
@@ -81,7 +81,16 @@ export async function registerRoutes(
         res.status(200).json({ status: "error", message: err.message });
       }
     }
-  });
+  }
+
+  function webhookGetHandler(_req: any, res: any) {
+    res.json({ status: "webhook endpoint active", method: "Use POST" });
+  }
+
+  app.post("/webhook", webhookHandler);
+  app.get("/webhook", webhookGetHandler);
+  app.post("/api/bot/webhook", webhookHandler);
+  app.get("/api/bot/webhook", webhookGetHandler);
 
   app.post("/slack-events", async (req, res) => {
     try {
