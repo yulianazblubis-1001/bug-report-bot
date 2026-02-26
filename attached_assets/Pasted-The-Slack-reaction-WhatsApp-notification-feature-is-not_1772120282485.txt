@@ -1,0 +1,58 @@
+The Slack reaction → WhatsApp notification feature is not working.
+Here is everything needed to make it work:
+
+1. STORE THE MAPPING when posting to Slack:
+   When a report is posted to Slack, the Slack API response includes 
+   a message timestamp (ts). Store a mapping:
+   
+   reportMap[channelId + ":" + messageTs] = {
+     phoneNumber: reporter's WhatsApp number,
+     senderName: reporter's name
+   }
+   
+   NOTE: Incoming Webhooks do NOT return a message timestamp.
+   You need to use the Slack Web API (chat.postMessage) instead of 
+   the webhook URL to get the ts back. This requires SLACK_BOT_TOKEN.
+   
+   Add to environment variables:
+   SLACK_BOT_TOKEN — found in Slack App > OAuth & Permissions > 
+   Bot User OAuth Token (starts with xoxb-)
+   
+   The bot needs these OAuth scopes:
+   - chat:write
+   - reactions:read
+   - files:write (for uploading screenshots)
+   
+   Switch from webhook POST to:
+   POST https://slack.com/api/chat.postMessage
+   Headers: { Authorization: "Bearer {SLACK_BOT_TOKEN}" }
+   Body: { channel: "production-bug", blocks: [...] }
+   
+   The response will contain { ts: "1234567890.123456", channel: "C123..." }
+   Store this ts + channel for the mapping.
+
+2. SLACK EVENT SUBSCRIPTIONS setup:
+   In api.slack.com/apps > your app:
+   - Go to "Event Subscriptions" > Turn ON
+   - Request URL: https://bug-report-bot.replit.app/api/bot/slack-events
+   - Under "Subscribe to bot events", add: reaction_added
+   - Save Changes
+   - Reinstall the app to workspace if prompted
+
+3. HANDLE THE EVENT in the server:
+   POST /api/bot/slack-events endpoint should:
+   - Handle url_verification challenge from Slack
+   - On reaction_added event, check if reaction name is "done" or "solve"
+   - Look up the phone number from the stored mapping
+   - Send WhatsApp message via WATI
+   
+   The custom emoji names in your Slack are likely:
+   - "done" (the red DONE stamp)
+   - "solve" (the green SOLVED badge)
+   
+   Log the reaction name to verify:
+   console.log("REACTION:", event.reaction);
+
+4. IMPORTANT: The bot must be INVITED to both channels.
+   In Slack, type in each channel:
+   /invite @Replit - Reporting tools
