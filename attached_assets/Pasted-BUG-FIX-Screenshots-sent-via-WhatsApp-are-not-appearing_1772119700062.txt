@@ -1,0 +1,56 @@
+BUG FIX: Screenshots sent via WhatsApp are not appearing in Slack.
+The Slack card shows "No photos attached" even when the user sends images.
+
+The problem is likely one of these:
+1. The media URL from WATI is not being stored in the session
+2. The WATI media URL expires before Slack can load it
+3. The image block is not being added to the Slack message
+
+FIX ALL THREE:
+
+1. STORING MEDIA — When WATI webhook receives a message with type "image" 
+   or "video", log the FULL payload to see where the media URL is:
+   
+   console.log("MEDIA MESSAGE:", JSON.stringify(req.body, null, 2));
+   
+   WATI puts the media URL in different places depending on the version:
+   - body.data (direct URL string)
+   - body.data.url
+   - body.data.media.url  
+   - body.mediaUrl
+   - body.attachment.url
+   
+   Try ALL of these and store whichever one has a value.
+
+2. DOWNLOADING MEDIA — WATI media URLs expire after a few hours. 
+   Download the image immediately when received and store it as base64 
+   or re-upload it. Use the WATI media download API:
+   
+   GET {WATI_API_ENDPOINT}/api/v1/getMedia?fileName={mediaFileName}
+   Headers: { Authorization: "Bearer {WATI_TOKEN}" }
+   
+   The fileName can be extracted from the media URL path.
+
+3. POSTING TO SLACK WITH IMAGE — Use Slack Web API (not just webhook) 
+   to upload the file properly:
+   
+   Option A (easier): If the WATI URL is publicly accessible, use 
+   Slack Block Kit image block:
+   {
+     type: "image",
+     image_url: "https://wati-media-url...",
+     alt_text: "Screenshot from reporter"
+   }
+   
+   Option B (reliable): Upload via Slack files.upload API:
+   POST https://slack.com/api/files.uploadV2
+   This requires a SLACK_BOT_TOKEN (not just webhook URL).
+   Add SLACK_BOT_TOKEN to environment variables.
+
+4. DEBUGGING — Add this log right before posting to Slack:
+   console.log("MEDIA URLS IN SESSION:", session.mediaUrls);
+   
+   This tells us if the URLs are being stored at all.
+
+Show me the console output when a user sends an image so I can see 
+what WATI is actually sending.

@@ -239,6 +239,8 @@ export async function postToSlack(
   const report = session.parsedReport || {};
   const fallbackText = `${report.title || 'Report'} — ${session.profile?.name || session.senderName}`;
 
+  console.log("MEDIA URLS IN SESSION:", session.mediaUrls);
+
   try {
     const res = await axios.post(webhookUrl, {
       text: fallbackText,

@@ -48,7 +48,9 @@ export async function registerRoutes(
 
   async function webhookHandler(req: any, res: any) {
     try {
-      console.log("WEBHOOK HIT:", JSON.stringify(req.body).substring(0, 500));
+      console.log("=== WATI PAYLOAD ===");
+      console.log(JSON.stringify(req.body, null, 2));
+      console.log("===================");
       const body = req.body;
 
       const phoneNumber = body.waId || body.whatsappNumber || body.from;
@@ -70,7 +72,7 @@ export async function registerRoutes(
         return res.status(200).json({ status: "ignored", reason: "no phone number" });
       }
 
-      console.log(`[Webhook] From ${phoneNumber} (${senderName}): type=${messageType}, text="${text}"`);
+      console.log(`[Webhook] From ${phoneNumber} (${senderName}): type=${messageType}, text="${text}", mediaUrl=${mediaUrl}`);
 
       res.status(200).json({ status: "received" });
 
