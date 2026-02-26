@@ -59,7 +59,9 @@ export async function registerRoutes(
       const messageType = body.type || "text";
 
       let mediaUrl: string | null = null;
-      if (body.data?.url) {
+      if (typeof body.data === 'string' && body.data.startsWith('http')) {
+        mediaUrl = body.data;
+      } else if (body.data?.url) {
         mediaUrl = body.data.url;
       } else if (body.mediaUrl) {
         mediaUrl = body.mediaUrl;
