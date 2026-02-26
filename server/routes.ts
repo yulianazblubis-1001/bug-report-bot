@@ -42,8 +42,13 @@ export async function registerRoutes(
     res.json(getReportLogs());
   });
 
+  app.get("/ping", (_req, res) => {
+    res.json({ status: "pong", timestamp: Date.now() });
+  });
+
   app.post("/webhook", async (req, res) => {
     try {
+      console.log("WEBHOOK HIT:", JSON.stringify(req.body).substring(0, 500));
       const body = req.body;
 
       const phoneNumber = body.waId || body.whatsappNumber || body.from;
