@@ -74,21 +74,24 @@ export async function handleMessage(
 
   let currentSession = sessionStore.get(phoneNumber);
 
-  if (['START', 'MULAI', 'MENU'].concat(TRIGGER_KEYWORDS).some(kw => upperText === kw) && !currentSession) {
+  const firstWord = upperText.split(/[\s\n]/)[0];
+  const isTriggerMessage = TRIGGER_KEYWORDS.some(kw => firstWord === kw || upperText.startsWith(kw));
+
+  if (isTriggerMessage && !currentSession) {
     sessionStore.reset(phoneNumber);
     currentSession = sessionStore.create(phoneNumber, senderName, profile);
     await wati.sendMessage(phoneNumber, getWelcomeMsg(displayName));
     return;
   }
 
-  if (['START', 'MULAI', 'MENU'].includes(upperText) && currentSession) {
+  if (['START', 'MULAI', 'MENU'].includes(firstWord) && currentSession) {
     sessionStore.reset(phoneNumber);
     currentSession = sessionStore.create(phoneNumber, senderName, profile);
     await wati.sendMessage(phoneNumber, getWelcomeMsg(displayName));
     return;
   }
 
-  if (['CANCEL', 'BATAL'].includes(upperText)) {
+  if (['CANCEL', 'BATAL'].includes(firstWord)) {
     if (currentSession) {
       sessionStore.reset(phoneNumber);
       await wati.sendMessage(phoneNumber, `Laporan dibatalkan. Ketik *START* untuk mulai lagi, ${displayName}.\n\n_(Report cancelled. Type START to begin again.)_`);
