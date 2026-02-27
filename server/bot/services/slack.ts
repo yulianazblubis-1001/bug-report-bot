@@ -1,5 +1,4 @@
 import axios from 'axios';
-import FormData from 'form-data';
 import type { BotSession } from '../session';
 
 function getWIBTimestamp(): string {
@@ -225,12 +224,13 @@ async function uploadFileToSlack(
   index: number
 ): Promise<void> {
   try {
-    console.log(`[Slack Upload] Starting download from: ${mediaUrl}`);
+    console.log(`[Slack Upload] Step 1: Downloading from ${mediaUrl}`);
     const downloadHeaders: Record<string, string> = {};
     if (mediaUrl.includes('wati.io') && process.env.WATI_TOKEN) {
-      downloadHeaders['Authorization'] = `Bearer ${process.env.WATI_TOKEN}`;
+      const token = process.env.WATI_TOKEN;
+      downloadHeaders['Authorization'] = token.toLowerCase().startsWith('bearer ') ? token : `Bearer ${token}`;
     }
-    const response = await axios.get(mediaUrl, { responseType: 'arraybuffer', timeout: 30000, headers: downloadHeaders });
+    const response = await axios.get(mediaUrl, { responseType: 'arraybuffer', timeout: 60000, headers: downloadHeaders });
     const fileBuffer = Buffer.from(response.data);
     const contentType = response.headers['content-type'] || 'application/octet-stream';
     console.log(`[Slack Upload] Downloaded ${fileBuffer.length} bytes, content-type: ${contentType}`);
@@ -240,26 +240,38 @@ async function uploadFileToSlack(
     const filename = isVideo ? `video_${index + 1}.${ext}` : `screenshot_${index + 1}.${ext}`;
     const label = isVideo ? `Video ${index + 1}` : `Screenshot ${index + 1}`;
 
-    const form = new FormData();
-    form.append('file', fileBuffer, { filename, contentType });
-    form.append('channels', channelId);
-    form.append('thread_ts', threadTs);
-    form.append('initial_comment', label);
-    form.append('title', label);
+    console.log(`[Slack Upload] Step 2: Getting upload URL for ${filename} (${fileBuffer.length} bytes)...`);
+    const urlRes = await axios.get('https://slack.com/api/files.getUploadURLExternal', {
+      params: { filename, length: fileBuffer.length },
+      headers: { Authorization: `Bearer ${botToken}` },
+    });
 
-    console.log(`[Slack Upload] Uploading ${filename} to channel ${channelId} thread ${threadTs}...`);
+    if (!urlRes.data.ok) {
+      console.error(`[Slack Upload] getUploadURLExternal failed:`, urlRes.data.error);
+      return;
+    }
 
-    const uploadRes = await axios.post('https://slack.com/api/files.upload', form, {
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        ...form.getHeaders(),
-      },
+    const uploadUrl = urlRes.data.upload_url;
+    const fileId = urlRes.data.file_id;
+    console.log(`[Slack Upload] Step 3: Uploading file content (file_id: ${fileId})...`);
+
+    await axios.post(uploadUrl, fileBuffer, {
+      headers: { 'Content-Type': contentType },
       maxContentLength: 50 * 1024 * 1024,
     });
 
-    if (!uploadRes.data.ok) {
-      console.error(`[Slack Upload] API error for ${filename}:`, uploadRes.data.error);
-      console.error(`[Slack Upload] Full response:`, JSON.stringify(uploadRes.data));
+    console.log(`[Slack Upload] Step 4: Completing upload to channel ${channelId} thread ${threadTs}...`);
+    const completeRes = await axios.post('https://slack.com/api/files.completeUploadExternal', {
+      files: [{ id: fileId, title: label }],
+      channel_id: channelId,
+      thread_ts: threadTs,
+      initial_comment: label,
+    }, {
+      headers: { Authorization: `Bearer ${botToken}` },
+    });
+
+    if (!completeRes.data.ok) {
+      console.error(`[Slack Upload] completeUploadExternal failed:`, completeRes.data.error);
     } else {
       console.log(`[Slack Upload] Successfully uploaded ${filename} to thread`);
     }
