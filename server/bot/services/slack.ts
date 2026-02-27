@@ -226,7 +226,11 @@ async function uploadFileToSlack(
 ): Promise<void> {
   try {
     console.log(`[Slack Upload] Starting download from: ${mediaUrl}`);
-    const response = await axios.get(mediaUrl, { responseType: 'arraybuffer', timeout: 30000 });
+    const downloadHeaders: Record<string, string> = {};
+    if (mediaUrl.includes('wati.io') && process.env.WATI_TOKEN) {
+      downloadHeaders['Authorization'] = `Bearer ${process.env.WATI_TOKEN}`;
+    }
+    const response = await axios.get(mediaUrl, { responseType: 'arraybuffer', timeout: 30000, headers: downloadHeaders });
     const fileBuffer = Buffer.from(response.data);
     const contentType = response.headers['content-type'] || 'application/octet-stream';
     console.log(`[Slack Upload] Downloaded ${fileBuffer.length} bytes, content-type: ${contentType}`);
