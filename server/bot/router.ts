@@ -169,39 +169,29 @@ export async function handleMessage(
 
     const hasScreenshot = currentSession.mediaUrls.length > 0;
 
-    try {
-      console.log(`[Router] Calling evaluateReport for ${phoneNumber}: type=${currentSession.reportType}, followUps=${currentSession.followUpCount}, hasScreenshot=${hasScreenshot}, msgs=${currentSession.conversation.length}`);
+    const result = await evaluateReport(
+      currentSession.conversation,
+      currentSession.reportType!,
+      currentSession.followUpCount,
+      hasScreenshot
+    );
 
-      const result = await evaluateReport(
-        currentSession.conversation,
-        currentSession.reportType!,
-        currentSession.followUpCount,
-        hasScreenshot
-      );
+    currentSession.parsedReport = result.parsedReport;
 
-      console.log(`[Router] evaluateReport result: status=${result.status}, hasFollowUp=${!!result.followUpQuestion}, hasParsed=${!!result.parsedReport}`);
-
-      currentSession.parsedReport = result.parsedReport;
-
-      if (result.status === 'need_more_info' && result.followUpQuestion && currentSession.followUpCount < 3) {
-        currentSession.followUpCount++;
-        currentSession.conversation.push({
-          role: 'assistant',
-          text: result.followUpQuestion,
-        });
-        await wati.sendMessage(phoneNumber, result.followUpQuestion);
-        return;
-      }
-
-      currentSession.step = 'CONFIRMING';
-      const summary = buildSummary(currentSession);
-      await wati.sendMessage(phoneNumber, summary);
-      return;
-    } catch (err: any) {
-      console.error(`[Router] evaluateReport FAILED for ${phoneNumber}:`, err.message);
-      await wati.sendMessage(phoneNumber, 'Maaf, terjadi kesalahan saat menganalisis laporan. Silakan coba lagi.\n\n_(Sorry, something went wrong. Please try again.)_');
+    if (result.status === 'need_more_info' && result.followUpQuestion && currentSession.followUpCount < 3) {
+      currentSession.followUpCount++;
+      currentSession.conversation.push({
+        role: 'assistant',
+        text: result.followUpQuestion,
+      });
+      await wati.sendMessage(phoneNumber, result.followUpQuestion);
       return;
     }
+
+    currentSession.step = 'CONFIRMING';
+    const summary = buildSummary(currentSession);
+    await wati.sendMessage(phoneNumber, summary);
+    return;
   }
 
   if (currentSession.step === 'CONFIRMING') {
