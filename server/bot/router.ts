@@ -57,32 +57,47 @@ export async function handleMessage(
   const cleanText = text ? text.trim() : '';
   const upperText = cleanText.toUpperCase();
 
+  const TRIGGER_KEYWORDS = ['BUG', 'REPORT', 'ADMIN', 'REQUEST', 'START', 'MULAI', 'MENU', 'LAPOR'];
+
   if (!isWhitelisted(phoneNumber)) {
-    await wati.sendMessage(phoneNumber, REJECTED_MSG);
+    const isTrigger = TRIGGER_KEYWORDS.some(kw => upperText.includes(kw));
+    if (isTrigger) {
+      await wati.sendMessage(phoneNumber, REJECTED_MSG);
+    } else {
+      console.log(`[Router] Ignoring message from non-whitelisted ${phoneNumber}: "${cleanText.substring(0, 50)}"`);
+    }
     return;
   }
 
   const profile = lookupProfile(phoneNumber);
   const displayName = profile?.name || senderName || phoneNumber;
 
-  if (['START', 'MULAI', 'HI', 'HALO', 'HELLO', 'HAI', 'MENU'].includes(upperText)) {
+  let currentSession = sessionStore.get(phoneNumber);
+
+  if (['START', 'MULAI', 'MENU'].concat(TRIGGER_KEYWORDS).some(kw => upperText === kw) && !currentSession) {
     sessionStore.reset(phoneNumber);
-    sessionStore.create(phoneNumber, senderName, profile);
+    currentSession = sessionStore.create(phoneNumber, senderName, profile);
+    await wati.sendMessage(phoneNumber, getWelcomeMsg(displayName));
+    return;
+  }
+
+  if (['START', 'MULAI', 'MENU'].includes(upperText) && currentSession) {
+    sessionStore.reset(phoneNumber);
+    currentSession = sessionStore.create(phoneNumber, senderName, profile);
     await wati.sendMessage(phoneNumber, getWelcomeMsg(displayName));
     return;
   }
 
   if (['CANCEL', 'BATAL'].includes(upperText)) {
-    sessionStore.reset(phoneNumber);
-    await wati.sendMessage(phoneNumber, `Laporan dibatalkan. Ketik *START* untuk mulai lagi, ${displayName}.\n\n_(Report cancelled. Type START to begin again.)_`);
+    if (currentSession) {
+      sessionStore.reset(phoneNumber);
+      await wati.sendMessage(phoneNumber, `Laporan dibatalkan. Ketik *START* untuk mulai lagi, ${displayName}.\n\n_(Report cancelled. Type START to begin again.)_`);
+    }
     return;
   }
 
-  let currentSession = sessionStore.get(phoneNumber);
-
   if (!currentSession) {
-    currentSession = sessionStore.create(phoneNumber, senderName, profile);
-    await wati.sendMessage(phoneNumber, getWelcomeMsg(displayName));
+    console.log(`[Router] Ignoring message from whitelisted ${phoneNumber} (no active session): "${cleanText.substring(0, 50)}"`);
     return;
   }
 
