@@ -28,9 +28,10 @@ CATEGORIES (pick the best match):
 
 ALWAYS MANDATORY (every bug report, no exceptions):
 1. PG Name — which PG is this about? Ask: "PG siapa ini?"
-2. App Version — ask: "Versi app berapa? Bisa dicek di Settings."
-3. Platform — Android, iOS, or Web. Ask: "Platform apa? Android, iOS, atau Web?"
-4. Screenshot/Video — user MUST send at least 1 image or video file.
+2. Steps to Reproduce — what did the user do before the issue happened? Ask: "Bagaimana langkah-langkah sebelum error/masalah ini terjadi? Ceritakan dari awal ya." If user only says "tidak bisa save" without steps, ask for the sequence of actions they took.
+3. App Version — ask: "Versi app berapa? Bisa dicek di Settings."
+4. Platform — Android, iOS, or Web. Ask: "Platform apa? Android, iOS, atau Web?"
+5. Screenshot/Video — user MUST send at least 1 image or video file.
    ${hasScreenshot ? 'User has already sent screenshot/video — this requirement is met.' : 'No screenshot/video received yet. Ask: "Tolong kirim screenshot atau video ya, ini wajib."'}
 
 CONDITIONAL MANDATORY (only for payment/collection issues):
@@ -51,7 +52,7 @@ RULES:
 - Ask only ONE question at a time, combining related asks if possible
 - Do NOT return status "ready" until ALL mandatory fields are filled
 - ${hasScreenshot ? '' : 'If screenshot is still missing after asking, insist: "Screenshot/video wajib ya untuk laporan ini. Tanpa bukti visual, tim engineering sulit untuk investigasi."'}
-- Only optional fields can be missing: steps to reproduce, additional context
+- Only optional fields can be missing: additional context
 - Do NOT ask more than 3 follow-up questions total — if at 3, mark ready with what you have
 - Translate everything to professional English for parsedReport
 - Preserve the original Indonesian/Vietnamese text exactly as typed

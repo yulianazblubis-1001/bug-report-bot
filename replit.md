@@ -42,7 +42,7 @@ A WhatsApp chatbot that guides Rize.farm agronomists through bug reports or admi
 - Timestamp/phone/area in footer context block
 
 ## Mandatory Fields (Bug Reports)
-- Always required: PG Name, App Version, Platform, Screenshot/Video
+- Always required: PG Name, Steps to Reproduce, App Version, Platform, Screenshot/Video
 - Conditional (payment issues): Farmer Name, Invoice Number
 - Payment keywords: payment, bayar, pembayaran, invoice, collect money, collection, tagihan, transfer, uang, cash
 

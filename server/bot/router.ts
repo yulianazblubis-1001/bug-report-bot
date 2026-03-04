@@ -30,11 +30,12 @@ const BUG_START_MSG = `Jelaskan masalahnya. Tulis dengan bahasa kamu sendiri.
 
 Yang wajib dilengkapi:
 - PG siapa
+- Langkah-langkah kejadian (steps to reproduce)
 - Versi app (cek di Settings)
 - Platform (Android/iOS/Web)
 - Screenshot atau video (wajib)
 
-_(Describe the issue. Required: PG name, app version, platform, screenshot/video.)_`;
+_(Describe the issue. Required: PG name, steps to reproduce, app version, platform, screenshot/video.)_`;
 
 const ADMIN_START_MSG = `Jelaskan apa yang kamu butuhkan. Tulis dengan bahasa kamu sendiri.
 
