@@ -213,7 +213,37 @@ function getFileExtension(url: string): string {
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) return ext;
   if (['mp4', 'mov', 'avi', 'webm', 'mkv'].includes(ext)) return ext;
   if (['pdf', 'doc', 'docx', 'xls', 'xlsx'].includes(ext)) return ext;
+
+  const fileNameMatch = url.match(/fileName=.*?\.(\w+)/i);
+  if (fileNameMatch) {
+    const parsed = fileNameMatch[1].toLowerCase();
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'mp4', 'mov', 'avi', 'webm', 'mkv', 'pdf'].includes(parsed)) {
+      return parsed;
+    }
+  }
+
   return 'jpg';
+}
+
+const MIME_MAP: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  avi: 'video/x-msvideo',
+  webm: 'video/webm',
+  mkv: 'video/x-matroska',
+  pdf: 'application/pdf',
+};
+
+function getMimeType(ext: string, serverContentType: string): string {
+  if (MIME_MAP[ext]) return MIME_MAP[ext];
+  if (serverContentType && serverContentType !== 'application/octet-stream') return serverContentType;
+  return 'application/octet-stream';
 }
 
 async function uploadFileToSlack(
@@ -232,13 +262,15 @@ async function uploadFileToSlack(
     }
     const response = await axios.get(mediaUrl, { responseType: 'arraybuffer', timeout: 60000, headers: downloadHeaders });
     const fileBuffer = Buffer.from(response.data);
-    const contentType = response.headers['content-type'] || 'application/octet-stream';
-    console.log(`[Slack Upload] Downloaded ${fileBuffer.length} bytes, content-type: ${contentType}`);
+    const serverContentType = response.headers['content-type'] || 'application/octet-stream';
 
     const ext = getFileExtension(mediaUrl);
+    const contentType = getMimeType(ext, serverContentType);
     const isVideo = ['mp4', 'mov', 'avi', 'webm', 'mkv'].includes(ext);
     const filename = isVideo ? `video_${index + 1}.${ext}` : `screenshot_${index + 1}.${ext}`;
     const label = isVideo ? `Video ${index + 1}` : `Screenshot ${index + 1}`;
+
+    console.log(`[Slack Upload] Downloaded ${fileBuffer.length} bytes, server-type: ${serverContentType}, resolved-type: ${contentType}, ext: ${ext}`);
 
     console.log(`[Slack Upload] Step 2: Getting upload URL for ${filename} (${fileBuffer.length} bytes)...`);
     const urlRes = await axios.get('https://slack.com/api/files.getUploadURLExternal', {
