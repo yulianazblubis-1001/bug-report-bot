@@ -5,6 +5,10 @@ import * as slack from './services/slack';
 import { evaluateReport } from './services/claude-agent';
 import { addReportLog } from './activityLog';
 import { isWhitelisted, lookupProfile, REJECTED_MSG } from './whitelist';
+import * as creditLimitFlow from './flows/creditLimitTopUp';
+import * as googleSheets from './services/google-sheets';
+import * as googleDrive from './services/google-drive';
+import { v4 as uuidv4 } from 'uuid';
 
 function getWelcomeMsg(name: string): string {
   return `Halo ${name}!
@@ -25,6 +29,17 @@ const INVALID_TYPE_MSG = `Maaf, saya tidak mengerti. Balas dengan:
 2 untuk *Admin Request*
 
 _(Reply 1 or 2.)_`;
+
+const ADMIN_SUBMENU_MSG = `🛠️ *Admin Request*
+
+Pilih jenis permintaan:
+
+1️⃣ General Request (reset password, dll)
+2️⃣ Credit Limit Top Up
+
+Balas 1 atau 2.
+
+_(Choose request type: 1 for General, 2 for Credit Limit Top Up)_`;
 
 const BUG_START_MSG = `Jelaskan masalahnya. Tulis dengan bahasa kamu sendiri.
 
@@ -121,6 +136,16 @@ export async function handleMessage(
       return;
     }
     if (cleanText === '2') {
+      currentSession.step = 'SELECT_ADMIN_TYPE';
+      await wati.sendMessage(phoneNumber, ADMIN_SUBMENU_MSG);
+      return;
+    }
+    await wati.sendMessage(phoneNumber, INVALID_TYPE_MSG);
+    return;
+  }
+
+  if (currentSession.step === 'SELECT_ADMIN_TYPE') {
+    if (cleanText === '1') {
       currentSession.reportType = 'admin';
       currentSession.step = 'COLLECTING';
       currentSession.conversation = [];
@@ -130,11 +155,24 @@ export async function handleMessage(
       await wati.sendMessage(phoneNumber, ADMIN_START_MSG);
       return;
     }
-    await wati.sendMessage(phoneNumber, INVALID_TYPE_MSG);
+    if (cleanText === '2') {
+      currentSession.reportType = 'creditTopUp';
+      currentSession.step = 'COLLECTING';
+      currentSession.data = { _stepIndex: 0 };
+      currentSession.mediaUrls = [];
+      const firstQ = creditLimitFlow.getFirstQuestion();
+      await wati.sendMessage(phoneNumber, `🏦 *Credit Limit Top Up*\n\nSaya akan memandu kamu step-by-step.\n\n${firstQ}`);
+      return;
+    }
+    await wati.sendMessage(phoneNumber, `Balas *1* untuk General Request atau *2* untuk Credit Limit Top Up.\n\n_(Reply 1 or 2.)_`);
     return;
   }
 
   if (currentSession.step === 'COLLECTING') {
+    if (currentSession.reportType === 'creditTopUp') {
+      return handleCreditLimitCollecting(currentSession, phoneNumber, cleanText, messageType, mediaUrl);
+    }
+
     const msgHasMedia = messageType === 'image' || messageType === 'video' || messageType === 'document';
     const messageMediaUrls: string[] = [];
 
@@ -203,22 +241,62 @@ export async function handleMessage(
     }
 
     if (upperText === 'KIRIM' || upperText === 'SUBMIT' || upperText === 'SEND') {
-      await submitReport(currentSession);
+      if (currentSession.reportType === 'creditTopUp') {
+        await submitCreditLimitReport(currentSession);
+      } else {
+        await submitReport(currentSession);
+      }
       return;
     }
 
     if (upperText === 'ULANG' || upperText === 'RESTART' || upperText === 'EDIT') {
-      currentSession.step = 'COLLECTING';
-      currentSession.conversation = [];
-      currentSession.mediaUrls = [];
-      currentSession.followUpCount = 0;
-      currentSession.parsedReport = null;
-      const startMsg = currentSession.reportType === 'bug' ? BUG_START_MSG : ADMIN_START_MSG;
-      await wati.sendMessage(phoneNumber, 'Mulai ulang.\n\n' + startMsg);
+      if (currentSession.reportType === 'creditTopUp') {
+        currentSession.step = 'COLLECTING';
+        currentSession.data = { _stepIndex: 0 };
+        currentSession.mediaUrls = [];
+        const firstQ = creditLimitFlow.getFirstQuestion();
+        await wati.sendMessage(phoneNumber, `Mulai ulang.\n\n${firstQ}`);
+      } else {
+        currentSession.step = 'COLLECTING';
+        currentSession.conversation = [];
+        currentSession.mediaUrls = [];
+        currentSession.followUpCount = 0;
+        currentSession.parsedReport = null;
+        const startMsg = currentSession.reportType === 'bug' ? BUG_START_MSG : ADMIN_START_MSG;
+        await wati.sendMessage(phoneNumber, 'Mulai ulang.\n\n' + startMsg);
+      }
       return;
     }
 
     await wati.sendMessage(phoneNumber, CONFIRM_ONLY_MSG);
+    return;
+  }
+}
+
+async function handleCreditLimitCollecting(
+  session: BotSession,
+  phoneNumber: string,
+  text: string,
+  messageType: string,
+  mediaUrl: string | null
+): Promise<void> {
+  const msgHasMedia = messageType === 'image' || messageType === 'video' || messageType === 'document';
+
+  const result = creditLimitFlow.processStep(session, text, msgHasMedia ? mediaUrl : null);
+
+  if (result.error) {
+    await wati.sendMessage(phoneNumber, result.error);
+    return;
+  }
+
+  if (result.showSummary && result.summary) {
+    session.step = 'CONFIRMING';
+    await wati.sendMessage(phoneNumber, result.summary);
+    return;
+  }
+
+  if (result.nextQuestion) {
+    await wati.sendMessage(phoneNumber, result.nextQuestion);
     return;
   }
 }
@@ -309,6 +387,125 @@ async function submitReport(session: BotSession): Promise<void> {
     await wati.sendMessage(
       phoneNumber,
       'Maaf, gagal mengirim laporan. Silakan coba lagi.\nKetik *KIRIM* untuk coba lagi, atau *ULANG* untuk mulai ulang.\n\n_(Failed to submit. Type KIRIM to retry, or ULANG to restart.)_'
+    );
+  }
+}
+
+function getWIBTimestamp(): string {
+  const now = new Date();
+  return now.toLocaleString('en-GB', {
+    timeZone: 'Asia/Jakarta',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }) + ' WIB';
+}
+
+async function submitCreditLimitReport(session: BotSession): Promise<void> {
+  const phoneNumber = session.phoneNumber;
+  const displayName = session.profile?.name || session.senderName;
+  const d = session.data;
+
+  try {
+    await wati.sendMessage(phoneNumber, 'Sedang mengirim permintaan credit limit top up...');
+
+    const requestId = uuidv4().substring(0, 8).toUpperCase();
+    const timestamp = getWIBTimestamp();
+
+    const docFields = ['docSignedSO', 'docFarmerHolding', 'docLandOwnership', 'docJaminan'];
+    const driveUrls: Record<string, string> = {};
+
+    for (const field of docFields) {
+      if (d[field] && typeof d[field] === 'string' && d[field].startsWith('http')) {
+        try {
+          console.log(`[CreditLimit] Uploading ${field} to Google Drive...`);
+          const { buffer, mimeType, ext } = await googleDrive.downloadFromWati(d[field]);
+          const fileName = `${requestId}_${field}.${ext}`;
+          const driveUrl = await googleDrive.uploadToDrive(buffer, fileName, mimeType);
+          driveUrls[field] = driveUrl;
+        } catch (err: any) {
+          console.error(`[CreditLimit] Failed to upload ${field} to Drive:`, err.message);
+          driveUrls[field] = d[field];
+        }
+      }
+    }
+
+    const slackData = {
+      ...d,
+      requestId,
+      timestamp,
+      docSignedSO: driveUrls.docSignedSO || d.docSignedSO || '',
+      docFarmerHolding: driveUrls.docFarmerHolding || d.docFarmerHolding || '',
+      docLandOwnership: driveUrls.docLandOwnership || d.docLandOwnership || '',
+      docJaminan: driveUrls.docJaminan || d.docJaminan || '',
+    };
+
+    const slackResult = await slack.postCreditLimitToSlack(session, slackData, (ts, channel) => {
+      sessionStore.storeSlackMapping(ts, channel, {
+        phoneNumber: session.phoneNumber,
+        senderName: displayName,
+        reportType: 'creditTopUp',
+        requestId,
+        farmerName: d.farmerName,
+      });
+    });
+
+    const sheetRow: googleSheets.CreditLimitRow = {
+      timestamp,
+      requestId,
+      reporterName: displayName,
+      reporterPhone: phoneNumber,
+      fgName: d.fgName || '',
+      farmerName: d.farmerName || '',
+      landSizeVerified: d.landParcelSize || '',
+      currentLimit: d.currentLimit || '',
+      requestedTopUp: d.requestedTopUp || '',
+      creditType: d.creditType || '',
+      reason: d.reason || '',
+      soNumber: d.soNumber || '',
+      docSignedSO: driveUrls.docSignedSO || d.docSignedSO || '',
+      docFarmerHolding: driveUrls.docFarmerHolding || d.docFarmerHolding || '',
+      docLandOwnership: driveUrls.docLandOwnership || d.docLandOwnership || '',
+      docJaminan: driveUrls.docJaminan || d.docJaminan || '',
+      status: 'PENDING',
+      reviewedBy: '',
+      reviewDate: '',
+      rejectionReason: '',
+      slackMessageTs: slackResult.ts || '',
+    };
+
+    try {
+      await googleSheets.appendRequest(sheetRow);
+    } catch (err: any) {
+      console.error('[CreditLimit] Failed to write to Google Sheets:', err.message);
+    }
+
+    addReportLog({
+      type: 'creditTopUp',
+      reporter: displayName,
+      phoneNumber,
+      summary: `Credit Limit Top Up — ${d.farmerName} — ${d.creditType}`,
+      status: 'submitted',
+    });
+
+    let successMsg = `*Credit Limit Top Up berhasil dikirim!*\n\n`;
+    successMsg += `Request ID: *${requestId}*\n`;
+    successMsg += `Farmer: ${d.farmerName}\n`;
+    successMsg += `Tim Ops Excellence sudah dinotifikasi dan akan review permintaan kamu.\n\n`;
+    successMsg += `Kamu akan mendapat notifikasi saat permintaan di-approve atau di-reject.\n\n`;
+    successMsg += `Ketik *START* untuk permintaan baru.\n\n`;
+    successMsg += `_(Credit Limit Top Up submitted. Request ID: ${requestId}. You'll be notified when it's approved or rejected. Type START for a new request.)_`;
+
+    await wati.sendMessage(phoneNumber, successMsg);
+    sessionStore.reset(phoneNumber);
+  } catch (err: any) {
+    console.error('[Router] Credit limit submit failed:', err.message);
+    await wati.sendMessage(
+      phoneNumber,
+      'Maaf, gagal mengirim permintaan. Silakan coba lagi.\nKetik *KIRIM* untuk coba lagi, atau *ULANG* untuk mulai ulang.\n\n_(Failed to submit. Type KIRIM to retry, or ULANG to restart.)_'
     );
   }
 }

@@ -18,21 +18,24 @@ export interface BotSession {
   phoneNumber: string;
   senderName: string;
   profile: AgronomistProfile | null;
-  step: 'SELECT_TYPE' | 'COLLECTING' | 'CONFIRMING';
-  reportType: 'bug' | 'admin' | null;
+  step: 'SELECT_TYPE' | 'SELECT_ADMIN_TYPE' | 'COLLECTING' | 'CONFIRMING';
+  reportType: 'bug' | 'admin' | 'creditTopUp' | null;
   conversation: ConversationMessage[];
   mediaUrls: string[];
   followUpCount: number;
   parsedReport: Record<string, any> | null;
+  data: Record<string, any>;
   lastActivity: number;
   createdAt: number;
 }
 
-interface SlackMapping {
+export interface SlackMapping {
   phoneNumber: string;
   senderName: string;
   reportType: string;
   summary?: string;
+  requestId?: string;
+  farmerName?: string;
 }
 
 class SessionStore {
@@ -65,6 +68,7 @@ class SessionStore {
       mediaUrls: [],
       followUpCount: 0,
       parsedReport: null,
+      data: {},
       lastActivity: Date.now(),
       createdAt: Date.now(),
     };
@@ -82,6 +86,15 @@ class SessionStore {
 
   getSlackMapping(slackTs: string, channelId: string): SlackMapping | undefined {
     return this.slackMap.get(`${channelId}:${slackTs}`);
+  }
+
+  findSlackMappingByRequestId(requestId: string): { key: string; mapping: SlackMapping } | undefined {
+    for (const [key, mapping] of this.slackMap.entries()) {
+      if (mapping.requestId === requestId) {
+        return { key, mapping };
+      }
+    }
+    return undefined;
   }
 
   getActiveSessions(): number {

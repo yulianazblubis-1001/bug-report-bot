@@ -315,6 +315,191 @@ async function uploadFileToSlack(
   }
 }
 
+export function buildCreditLimitBlocks(session: BotSession, data: Record<string, any>): any[] {
+  const profile = session.profile;
+  const timestamp = getWIBTimestamp();
+  const landSize = parseFloat(data.landParcelSize) || 0;
+  const isLargeFarmer = landSize > 2.5;
+  const isAgriInput = data.creditType === 'Agri Input';
+
+  const blocks: any[] = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: '🏦 CREDIT LIMIT TOP UP REQUEST', emoji: true },
+    },
+    { type: 'divider' },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Requestor:* ${profile?.name || session.senderName} | +${session.phoneNumber}` },
+        { type: 'mrkdwn', text: `*Request ID:* ${data.requestId}` },
+      ],
+    },
+    {
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `🕐 Submitted: ${timestamp}` }],
+    },
+    { type: 'divider' },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*FG:* ${data.fgName}` },
+        { type: 'mrkdwn', text: `*Farmer:* ${data.farmerName}` },
+      ],
+    },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Land Parcel Size:* ${data.landParcelSize} Ha${isLargeFarmer ? ' ⚠️ LARGE FARMER' : ''}` },
+        { type: 'mrkdwn', text: `*Credit Type:* ${data.creditType}` },
+      ],
+    },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Current Limit:* ${data.currentLimit}` },
+        { type: 'mrkdwn', text: `*Requested Top-Up:* ${data.requestedTopUp}` },
+      ],
+    },
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Reason:*\n${data.reason}` },
+    },
+  ];
+
+  if (isAgriInput && data.soNumber) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*SO Number:* ${data.soNumber}` },
+    });
+  }
+
+  blocks.push({ type: 'divider' });
+
+  let docList = '';
+  if (isAgriInput) {
+    docList += `• Signed SO ${data.docSignedSO ? '✅' : '❌'}\n`;
+    docList += `• Farmer holding SO ${data.docFarmerHolding ? '✅' : '❌'}\n`;
+  } else {
+    docList += `• Signed Request Letter ${data.docSignedSO ? '✅' : '❌'}\n`;
+    docList += `• Farmer holding Request Letter ${data.docFarmerHolding ? '✅' : '❌'}\n`;
+  }
+
+  if (isLargeFarmer) {
+    docList += `• Proof of land ownership ${data.docLandOwnership ? '✅' : '❌'}\n`;
+    docList += `• Dokumen Jaminan ${data.docJaminan ? '✅' : '❌'}\n`;
+  }
+
+  let docCount = 0;
+  if (data.docSignedSO) docCount++;
+  if (data.docFarmerHolding) docCount++;
+  if (data.docLandOwnership) docCount++;
+  if (data.docJaminan) docCount++;
+
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: `*📎 Documents attached: ${docCount} files*\n${docList}` },
+  });
+
+  blocks.push({ type: 'divider' });
+
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: `*⏳ Status: PENDING APPROVAL*` },
+  });
+
+  const mentionOps = process.env.SLACK_MENTION_OPS;
+  if (mentionOps) {
+    const mentions = mentionOps.split(',').map(id => `<@${id.trim()}>`).join(' ');
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `${mentions} — Please review and reply in this thread:\n• Type *APPROVED* to approve\n• Type *REJECTED [reason]* to reject`,
+      },
+    });
+  }
+
+  blocks.push({
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: `${timestamp} | +${session.phoneNumber} | ${profile?.area || '—'}` }],
+  });
+
+  return blocks;
+}
+
+export async function postCreditLimitToSlack(
+  session: BotSession,
+  data: Record<string, any>,
+  onSlackTs?: (ts: string, channel: string) => void
+): Promise<any> {
+  const blocks = buildCreditLimitBlocks(session, data);
+  const fallbackText = `Credit Limit Top Up — ${data.farmerName} — ${session.profile?.name || session.senderName}`;
+
+  const botToken = process.env.SLACK_BOT_TOKEN;
+  const channelId = process.env.SLACK_CHANNEL_CREDIT_LIMIT || process.env.SLACK_CHANNEL_ADMIN;
+
+  if (!botToken || !channelId) {
+    throw new Error('SLACK_BOT_TOKEN and SLACK_CHANNEL_CREDIT_LIMIT must be configured');
+  }
+
+  const res = await axios.post('https://slack.com/api/chat.postMessage', {
+    channel: channelId,
+    text: fallbackText,
+    blocks: blocks,
+  }, {
+    headers: { Authorization: `Bearer ${botToken}` },
+  });
+
+  if (!res.data.ok) {
+    console.error('[Slack] Web API error for credit limit:', res.data.error);
+    throw new Error(`Slack API: ${res.data.error}`);
+  }
+
+  const messageTs = res.data.ts;
+  const messageChannel = res.data.channel;
+
+  console.log(`[Slack] Posted credit limit request from ${session.profile?.name || session.senderName} (ts: ${messageTs})`);
+
+  if (messageTs && messageChannel && onSlackTs) {
+    onSlackTs(messageTs, messageChannel);
+  }
+
+  return { ts: messageTs, channel: messageChannel };
+}
+
+export async function postSlackThreadReply(
+  channelId: string,
+  threadTs: string,
+  text: string
+): Promise<void> {
+  const botToken = process.env.SLACK_BOT_TOKEN;
+  if (!botToken) return;
+
+  await axios.post('https://slack.com/api/chat.postMessage', {
+    channel: channelId,
+    thread_ts: threadTs,
+    text: text,
+  }, {
+    headers: { Authorization: `Bearer ${botToken}` },
+  });
+}
+
+export async function getSlackUserName(userId: string): Promise<string> {
+  const botToken = process.env.SLACK_BOT_TOKEN;
+  if (!botToken) return userId;
+
+  try {
+    const res = await axios.get('https://slack.com/api/users.info', {
+      params: { user: userId },
+      headers: { Authorization: `Bearer ${botToken}` },
+    });
+    return res.data.user?.real_name || res.data.user?.name || userId;
+  } catch {
+    return userId;
+  }
+}
+
 export async function postToSlack(
   session: BotSession,
   onSlackTs?: (ts: string, channel: string) => void

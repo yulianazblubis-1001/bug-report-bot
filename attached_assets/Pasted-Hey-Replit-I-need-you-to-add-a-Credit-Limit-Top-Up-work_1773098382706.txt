@@ -1,0 +1,160 @@
+Hey Replit, I need you to add a **Credit Limit Top-Up workflow** to my existing WhatsApp bot. This is a major feature under the existing Admin Request flow. Here is the full specification:
+## Overview
+Currently the bot supports Bug Report and Admin Request. I need to add a **sub-type** under Admin Request called **"Credit Limit Top Up"**. This has a more complex workflow involving Google Sheets, Google Drive (for uploading photos), and Slack thread-based approvals.
+## Step 1: Add Sub-Menu to Admin Request
+When a user selects "2" (Admin Request) in the main menu, instead of going directly to the admin flow, show a sub-menu:
+```
+🛠️ Admin Request
+Pilih jenis permintaan:
+1️⃣ General Request (reset password, dll)
+2️⃣ Credit Limit Top Up
+Balas 1 atau 2.
+_(Choose request type: 1 for General, 2 for Credit Limit Top Up)_
+```
+- If user picks 1 → proceed with existing `adminRequest.js` flow (no changes)
+- If user picks 2 → enter the new Credit Limit Top-Up flow
+## Step 2: Create `src/flows/creditLimitTopUp.js`
+Create a new step-by-step flow file following the exact same pattern as `bugReport.js` and `adminRequest.js` (NO AI during data collection, just step-by-step questions).
+**IMPORTANT: This flow has CONDITIONAL steps.** After the user selects the credit type and provides the land parcel size, the bot must dynamically decide which document steps to show. Store the credit type and LPV in session data so you can branch.
+The steps are:
+**Always asked:**
+1. **FG Name** (required, min 2 chars): "Siapa nama FG?"
+2. **Farmer Name** (required, min 2 chars): "Siapa nama Farmer yang butuh top up credit limit?"
+3. **Land Parcel Size** (required, min 1 char): "Berapa total luas lahan terverifikasi (Ha)? (contoh: 1.5 atau 3.2)"
+4. **Current Credit Limit** (required, min 2 chars): "Berapa credit limit saat ini? (contoh: IDR 14jt)"
+5. **Requested Top-Up Amount** (required, min 2 chars): "Berapa jumlah top up yang dibutuhkan? (contoh: tambah IDR 5jt, atau total jadi IDR 19jt)"
+6. **Credit Type** (required, choice): "Jenis credit limit apa?" → 1: Agri Input, 2: Mechanization
+7. **Reason/Justification** (required, min 10 chars): "Jelaskan alasan mengapa top up dibutuhkan. Harus detail dan jelas."
+**Conditional — If Credit Type = Agri Input (choice 1):**
+8. **SO Number** (required, min 2 chars): "Berapa nomor Sales Order (SO)?"
+9. **Signed SO** (required, media): "Kirim foto SO yang sudah ditandatangani Farmer. WAJIB."
+10. **Farmer holding SO** (required, media): "Kirim foto Farmer sedang memegang SO yang sudah ditandatangani. WAJIB."
+**Conditional — If Credit Type = Mechanization (choice 2):**
+8. **Signed Request Letter** (required, media): "Kirim foto Surat Permohonan yang sudah ditandatangani Farmer. WAJIB."
+9. **Farmer holding Request Letter** (required, media): "Kirim foto Farmer sedang memegang Surat Permohonan yang sudah ditandatangani. WAJIB."
+**Conditional — If Land Parcel Size > 2.5 Ha (Large Farmer):**
+After the credit-type-specific docs, add these two extra mandatory steps:
+- **Proof of land ownership** (required, media): "⚠️ Lahan > 2.5 Ha — termasuk kategori Large Farmer. Kirim bukti kepemilikan atau sewa lahan (sertifikat/surat sewa). WAJIB."
+- **Dokumen Jaminan** (required, media): "Kirim Dokumen Jaminan sebagai syarat perpanjangan limit kredit. WAJIB."
+**Implementation approach:** Instead of a static `STEPS` array, build the steps dynamically after step 6 (Credit Type) using a function like `buildRemainingSteps(creditType, landParcelSize)` that returns the correct list of remaining steps. Or use a `getNextStep()` function that checks `session.data.creditType` and `session.data.landParcelSize` to decide which step comes next.
+Show a summary at the end just like the other flows, then wait for KIRIM/ULANG.
+## Step 3: Create `src/services/googleSheets.js` and Google Drive Upload
+**Install:** `npm install googleapis uuid`
+### Google Drive — Upload photos as URLs
+When the bot receives photos/documents from WhatsApp (via WATI media URLs), it should:
+1. Download the file from the WATI media URL
+2. Upload it to a shared Google Drive folder using the Drive API
+3. Make the file publicly viewable (or viewable by anyone with link)
+4. Store the Google Drive URL in the spreadsheet
+Add env variable: `GOOGLE_DRIVE_FOLDER_ID` — the folder ID where all docs get uploaded.
+### Google Sheet — Full Column Structure
+Here are all 21 columns the bot should write to. The headers MUST match these exactly because the spreadsheet is already set up:
+| Col | Header | Source | Notes |
+|-----|--------|--------|-------|
+| A | Timestamp | Auto-generated | WIB format (Asia/Jakarta) |
+| B | Request ID | Auto-generated UUID | For tracking |
+| C | Reporter Name | WhatsApp session | Sender name from WATI |
+| D | Reporter Phone | WhatsApp session | Phone number |
+| E | FG | WhatsApp step | FG name |
+| F | Farmer | WhatsApp step | Farmer name |
+| G | Land Size Verified | WhatsApp step | Ha value (number) |
+| H | Current Limit | WhatsApp step | IDR amount text |
+| I | Requested Top-Up | WhatsApp step | IDR amount text |
+| J | Credit Type | WhatsApp step | "Agri Input" or "Mechanization" |
+| K | Reason | WhatsApp step | Justification text |
+| L | SO Number | WhatsApp step | Agri Input only, blank for Mech |
+| M | Doc: Signed SO / Request Letter | Google Drive URL | Uploaded photo |
+| N | Doc: Farmer Holding Document | Google Drive URL | Uploaded photo |
+| O | Doc: Land Ownership Proof | Google Drive URL | Large Farmer only, blank otherwise |
+| P | Doc: Dokumen Jaminan | Google Drive URL | Large Farmer only, blank otherwise |
+| Q | Status | Workflow | PENDING → APPROVED / REJECTED → RESOLVED |
+| R | Reviewed By | Slack thread | Name of person who approved/rejected |
+| S | Review Date | Auto-generated | When approval/rejection happened |
+| T | Rejection Reason | Slack thread | Only filled if rejected |
+| U | Slack Message TS | System | For linking Slack msg to sheet row |
+The service should have these functions:
+1. **`appendRequest(data)`** — Append a new row with all data, Status = "PENDING"
+2. **`updateStatus(requestId, status, reviewedBy, reason)`** — Update cols Q–T
+3. **`findBySlackTs(slackTs)`** — Find a row by Slack message TS
+4. **`findByRequestId(requestId)`** — Find a row by Request ID
+5. **`uploadToDrive(fileBuffer, fileName, mimeType)`** — Upload file to Google Drive, return shareable URL
+## Step 4: Update `src/services/slack.js`
+Add a new function `buildCreditLimitBlocks(session, data)` that formats the Slack message specifically for Credit Limit Top Up requests. The format should be:
+```
+🏦 CREDIT LIMIT TOP UP REQUEST | Rize.farm
+━━━━━━━━━━━━━━━━━━━━
+👤 Requestor: [name] | [phone]
+🆔 Request ID: [uuid]
+🕐 Submitted: [timestamp WIB]
+━━━━━━━━━━━━━━━━━━━━
+🌾 PG/Farmer: [name]
+📐 Land Parcel Size: [X] Ha [⚠️ LARGE FARMER if >2.5 Ha]
+💰 Current Limit: [amount]
+📈 Requested Top-Up: [amount]
+🏷️ Credit Type: [Agri Input / Mechanization]
+📝 Reason: [justification]
+📋 SO Number: [number] (Agri Input only)
+📎 Documents attached: [count] files
+   - Signed SO / Request Letter ✅
+   - Farmer holding document ✅
+   - Proof of land ownership ✅ (Large Farmer only)
+   - Dokumen Jaminan ✅ (Large Farmer only)
+━━━━━━━━━━━━━━━━━━━━
+⏳ Status: PENDING APPROVAL
+<@DIMAS_USER_ID> <@MIKE_USER_ID> <@RACHIT_USER_ID> — Please review and reply in this thread:
+• Type APPROVED to approve
+• Type REJECTED [reason] to reject
+```
+**IMPORTANT:** This message must be posted using the **Slack Web API** (`chat.postMessage`) instead of an incoming webhook, because we need the message timestamp (`ts`) back to track the thread. Post to channel `C0766PKUK1N` (bugs-and-admin-requests). Add `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_CREDIT_LIMIT` env variables. Store the Slack User IDs for Dimas Radithya, Mike, and Rachit as env variables (`SLACK_MENTION_OPS`) so they get mentioned on every credit limit request. Read the SLACK_MENTION_OPS env var, split by comma, and format each as `<@USER_ID>` in the message.
+## Step 5: Update `src/index.js` (Slack Events Endpoint)
+Enhance the existing `/slack-events` endpoint to also handle `message` events (specifically thread replies). When a thread reply is detected on a credit limit request message:
+1. Check if the reply contains "APPROVED" or "REJECTED"
+2. **If APPROVED:**
+   - Update Google Sheet status to "APPROVED" (columns Q, R, S)
+   - Post a thread reply: "✅ Request approved by @[user]. Engineers — please process this credit limit top-up. React with ✅ when done."
+   - Do NOT send WhatsApp message yet (wait for engineer to react ✅)
+3. **If REJECTED [reason]:**
+   - Update Google Sheet status to "REJECTED" with the reason (columns Q, R, S, T)
+   - Send WhatsApp message to the original requester: "❌ Halo [name], permintaan credit limit top up untuk [Farmer name] ditolak.\n\nAlasan: [reason]\n\nKamu bisa submit ulang dengan ketik START.\n\n_(Your credit limit top-up request for [Farmer name] was rejected. Reason: [reason]. Type START to resubmit.)_"
+   - Post a Slack thread reply confirming the rejection was communicated to the user
+To link thread replies back to the original request, use `findBySlackTs()` from the Google Sheets service to look up the request by the parent message timestamp.
+## Step 6: Handle Engineer Resolution (Reaction)
+The existing reaction handler already handles `:done:` and `:solve:`. For credit limit requests, when the engineer reacts with ✅ (`:white_check_mark:` or `:done:`):
+- Update Google Sheet status to "RESOLVED"
+- Send WhatsApp message to requester: "✅ Halo [name]! Credit limit top up untuk [Farmer name] sudah diproses! Silakan cek di app. 🙏\n\n_(Your credit limit top-up for [Farmer name] has been processed! Please check in the app.)_"
+## Step 7: Update `router.js`
+Update the router to handle the new admin sub-menu state:
+- Add a new step `SELECT_ADMIN_TYPE` between `SELECT_TYPE` and `COLLECTING`
+- When user picks "2" in main menu → go to `SELECT_ADMIN_TYPE`
+- When user picks "1" in admin sub-menu → proceed with existing admin flow
+- When user picks "2" in admin sub-menu → proceed with credit limit top-up flow
+- Import the new `creditLimitTopUp` flow and use it when `session.reportType === 'creditTopUp'`
+## Step 8: Update `src/services/translate.js`
+Add credit limit field translation support. Only translate the `reason` field (justification text). Other fields like amounts, names, and SO numbers should NOT be translated.
+## New Environment Variables Needed
+```
+# Google Sheets
+GOOGLE_SHEETS_ID=<the spreadsheet ID from the URL>
+GOOGLE_SERVICE_ACCOUNT_EMAIL=your_service_account@project.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+GOOGLE_DRIVE_FOLDER_ID=<the Google Drive folder ID for uploading documents>
+# Slack Bot (for Web API - needed for credit limit flow)
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_CHANNEL_CREDIT_LIMIT=C0766PKUK1N
+# Slack User IDs to mention on credit limit requests (comma-separated)
+# Get from Slack: click profile → three dots → Copy member ID
+SLACK_MENTION_OPS=U_DIMAS_ID,U_MIKE_ID,U_RACHIT_ID
+```
+## New npm Dependencies
+```
+npm install googleapis uuid
+```
+## Key Rules — DO NOT BREAK THESE
+1. **NO AI during data collection** — keep the same step-by-step state machine pattern used in bugReport.js and adminRequest.js
+2. **AI (Claude) only for translation** after all fields are collected
+3. **Google Sheets must be updated at every stage** (submitted → approved/rejected → resolved)
+4. **Thread-based approval** — Ops Excellence replies in the Slack thread with APPROVED or REJECTED, NOT reactions
+5. **Reactions for engineer resolution** — Engineer uses emoji reaction (✅ or :done:) when done
+6. **Resubmission** — If rejected, user can submit again via START. Creates a new row in Sheet.
+7. **All document photos uploaded to Google Drive** — convert WATI media URLs to Google Drive shareable links
+8. **Do not break existing Bug Report and General Admin Request flows** — they must continue working exactly as before

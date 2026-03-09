@@ -6,6 +6,8 @@ import { sessionStore } from "./bot/session";
 import { sendMessage } from "./bot/services/wati";
 import { getReportLogs, getStats } from "./bot/activityLog";
 import { isWhitelisted, getWhitelistCount } from "./bot/whitelist";
+import * as googleSheets from "./bot/services/google-sheets";
+import { postSlackThreadReply, getSlackUserName } from "./bot/services/slack";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -155,6 +157,25 @@ export async function registerRoutes(
 
         console.log(`[Slack Events] Found mapping for ${mapping.senderName} (${mapping.phoneNumber})`);
 
+        if (mapping.reportType === 'creditTopUp') {
+          if (reaction === "white_check_mark" || reaction === "done") {
+            try {
+              if (mapping.requestId) {
+                await googleSheets.updateStatus(mapping.requestId, 'RESOLVED', 'Engineer', '');
+              }
+              await sendMessage(
+                mapping.phoneNumber,
+                `✅ Halo ${mapping.senderName}! Credit limit top up untuk ${mapping.farmerName || 'farmer'} sudah diproses! Silakan cek di app. 🙏\n\n_(Your credit limit top-up for ${mapping.farmerName || 'farmer'} has been processed! Please check in the app.)_`
+              );
+              await postSlackThreadReply(channelId, itemTs, `✅ Credit limit top-up has been processed. WhatsApp notification sent to ${mapping.senderName}.`);
+              console.log(`[Slack Events] Credit limit resolved for ${mapping.phoneNumber}`);
+            } catch (err: any) {
+              console.error('[Slack Events] Error handling credit limit resolution:', err.message);
+            }
+          }
+          return;
+        }
+
         if (reaction === "done") {
           await sendMessage(
             mapping.phoneNumber,
@@ -169,6 +190,72 @@ export async function registerRoutes(
             `Halo ${mapping.senderName}! Laporan kamu sudah SOLVED. Silakan cek ya.\n\n_(Your report has been SOLVED. Please check.)_`
           );
           console.log(`[Slack Events] :solve: -> notified ${mapping.phoneNumber}`);
+        }
+      }
+
+      if (body.event?.type === "message" && body.event.thread_ts && !body.event.bot_id) {
+        const threadTs = body.event.thread_ts;
+        const channelId = body.event.channel;
+        const messageText = (body.event.text || '').trim();
+        const userId = body.event.user;
+
+        console.log(`[Slack Events] Thread reply in ${channelId}: "${messageText.substring(0, 80)}" by ${userId}`);
+
+        const creditLimitChannel = process.env.SLACK_CHANNEL_CREDIT_LIMIT || process.env.SLACK_CHANNEL_ADMIN;
+        if (channelId !== creditLimitChannel) return;
+
+        const mapping = sessionStore.getSlackMapping(threadTs, channelId);
+        if (!mapping || mapping.reportType !== 'creditTopUp') {
+          console.log(`[Slack Events] No credit limit mapping for thread ${threadTs}`);
+          return;
+        }
+
+        const upperMsg = messageText.toUpperCase();
+        const userName = await getSlackUserName(userId);
+
+        if (upperMsg === 'APPROVED' || upperMsg.startsWith('APPROVED')) {
+          console.log(`[Slack Events] Credit limit APPROVED by ${userName} for ${mapping.requestId}`);
+
+          try {
+            if (mapping.requestId) {
+              await googleSheets.updateStatus(mapping.requestId, 'APPROVED', userName, '');
+            }
+            await postSlackThreadReply(
+              channelId,
+              threadTs,
+              `✅ Request approved by ${userName}. Engineers — please process this credit limit top-up. React with ✅ when done.`
+            );
+            console.log(`[Slack Events] Approval posted for ${mapping.requestId}`);
+          } catch (err: any) {
+            console.error('[Slack Events] Error processing approval:', err.message);
+          }
+        }
+
+        if (upperMsg.startsWith('REJECTED') || upperMsg.startsWith('REJECT')) {
+          const reason = messageText.replace(/^REJECTED?\s*/i, '').trim() || 'No reason provided';
+
+          console.log(`[Slack Events] Credit limit REJECTED by ${userName} for ${mapping.requestId}: ${reason}`);
+
+          try {
+            if (mapping.requestId) {
+              await googleSheets.updateStatus(mapping.requestId, 'REJECTED', userName, reason);
+            }
+
+            await sendMessage(
+              mapping.phoneNumber,
+              `❌ Halo ${mapping.senderName}, permintaan credit limit top up untuk ${mapping.farmerName || 'farmer'} ditolak.\n\nAlasan: ${reason}\n\nKamu bisa submit ulang dengan ketik *START*.\n\n_(Your credit limit top-up request for ${mapping.farmerName || 'farmer'} was rejected. Reason: ${reason}. Type START to resubmit.)_`
+            );
+
+            await postSlackThreadReply(
+              channelId,
+              threadTs,
+              `❌ Request rejected by ${userName}. Reason: ${reason}\nWhatsApp notification sent to ${mapping.senderName}.`
+            );
+
+            console.log(`[Slack Events] Rejection processed for ${mapping.requestId}`);
+          } catch (err: any) {
+            console.error('[Slack Events] Error processing rejection:', err.message);
+          }
         }
       }
     } catch (err: any) {
