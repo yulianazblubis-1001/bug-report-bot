@@ -8,6 +8,7 @@ interface StepDef {
   minLength: number;
   type?: 'choice' | 'media';
   choices?: Record<string, string>;
+  validate?: (text: string) => string | null;
 }
 
 const BASE_STEPS: StepDef[] = [
@@ -28,6 +29,13 @@ const BASE_STEPS: StepDef[] = [
     question: 'Berapa total luas lahan terverifikasi (Ha)?\n(contoh: 1.5 atau 3.2)\n\n_(What is the total verified land parcel size in hectares?)_',
     required: true,
     minLength: 1,
+    validate: (text: string) => {
+      const num = parseFloat(text.replace(',', '.').trim());
+      if (isNaN(num) || num <= 0) {
+        return '⚠️ Tolong masukkan angka yang valid untuk luas lahan (contoh: 1.5 atau 3.2).\n\n_(Please enter a valid number for land size.)_';
+      }
+      return null;
+    },
   },
   {
     id: 'currentLimit',
@@ -174,7 +182,18 @@ export function processStep(
     return { error: validationError };
   }
 
-  session.data[step.id] = text.trim();
+  if (step.validate) {
+    const customError = step.validate(text.trim());
+    if (customError) {
+      return { error: customError };
+    }
+  }
+
+  let value = text.trim();
+  if (step.id === 'landParcelSize') {
+    value = value.replace(',', '.');
+  }
+  session.data[step.id] = value;
   session.data._stepIndex = stepIndex + 1;
 
   return getNextResponse(session);

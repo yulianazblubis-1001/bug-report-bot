@@ -58,10 +58,24 @@ export async function uploadToDrive(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         role: 'reader',
-        type: 'anyone',
+        type: 'domain',
+        domain: 'rize.farm',
       }),
     }
-  );
+  ).catch(async () => {
+    await connectors.proxy(
+      'google-drive',
+      `/drive/v3/files/${fileId}/permissions`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: 'reader',
+          type: 'anyone',
+        }),
+      }
+    );
+  });
 
   const driveUrl = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
   console.log(`[Google Drive] Uploaded ${fileName} → ${driveUrl}`);

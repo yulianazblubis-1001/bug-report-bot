@@ -28,10 +28,14 @@ async function getAccessToken() {
     }
   ).then(res => res.json()).then(data => data.items?.[0]);
 
-  const accessToken = connectionSettings?.settings?.access_token || connectionSettings.settings?.oauth?.credentials?.access_token;
+  if (!connectionSettings || !connectionSettings.settings) {
+    throw new Error('Google Sheet not connected — please check the integration in Replit settings');
+  }
 
-  if (!connectionSettings || !accessToken) {
-    throw new Error('Google Sheet not connected');
+  const accessToken = connectionSettings.settings.access_token || connectionSettings.settings?.oauth?.credentials?.access_token;
+
+  if (!accessToken) {
+    throw new Error('Google Sheet access token not available — integration may need re-authorization');
   }
   return accessToken;
 }
