@@ -630,6 +630,8 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
       slackMessageTs: slackResult.ts || '',
     };
 
+    console.log(`[CreditLimit] Saving slackMessageTs="${sheetRow.slackMessageTs}" to sheet for ${requestId}`);
+
     try {
       await googleSheets.appendRequest(sheetRow);
       console.log('[CreditLimit] Google Sheet write successful for', requestId);

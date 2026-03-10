@@ -229,38 +229,48 @@ export async function registerRoutes(
 
       const creditLimitChannel = process.env.SLACK_CHANNEL_CREDIT_LIMIT || process.env.SLACK_CHANNEL_ADMIN;
 
-      if (status === 'APPROVED') {
-        if (slackTs && creditLimitChannel) {
-          await addSlackReaction(creditLimitChannel, slackTs, 'git-approved');
-          await postSlackThreadReply(
-            creditLimitChannel,
-            slackTs,
-            `✅ Approved by ${reviewedBy || 'Ops'}. Engineers — please process this credit limit top-up. React with ✅ when done.`
-          );
+      if (status === 'APPROVED' || status === 'REJECTED') {
+        const reason = status === 'REJECTED' ? (rejectionReason || 'No reason provided') : '';
+
+        if (creditLimitChannel) {
+          if (slackTs) {
+            console.log(`[Sheet Update] Using slackTs="${slackTs}" for Slack thread reply`);
+            const emoji = status === 'APPROVED' ? 'white_check_mark' : 'x';
+            try {
+              await addSlackReaction(creditLimitChannel, slackTs, emoji);
+            } catch (reactionErr: any) {
+              console.error(`[Sheet Update] Reaction failed: ${reactionErr.message}`);
+            }
+
+            const replyText = status === 'APPROVED'
+              ? `✅ Approved by ${reviewedBy || 'Ops'}. Engineers — please process this credit limit top-up. React with ✅ when done.`
+              : `❌ Rejected by ${reviewedBy || 'Ops'}. Reason: ${reason}\nWhatsApp notification sent to ${reporterName || 'reporter'}.`;
+
+            try {
+              await postSlackThreadReply(creditLimitChannel, slackTs, replyText);
+            } catch (replyErr: any) {
+              console.error(`[Sheet Update] Thread reply failed: ${replyErr.message}`);
+            }
+          } else {
+            console.warn(`[Sheet Update] No slackTs — cannot add reaction or thread reply`);
+          }
         }
-        console.log(`[Sheet Update] APPROVED ${requestId} by ${reviewedBy}`);
-      }
 
-      if (status === 'REJECTED') {
-        const reason = rejectionReason || 'No reason provided';
-
-        if (slackTs && creditLimitChannel) {
-          await addSlackReaction(creditLimitChannel, slackTs, 'rejected');
-          await postSlackThreadReply(
-            creditLimitChannel,
-            slackTs,
-            `❌ Rejected by ${reviewedBy || 'Ops'}. Reason: ${reason}\nWhatsApp notification sent to ${reporterName || 'reporter'}.`
-          );
-        }
-
-        if (reporterPhone) {
+        if (status === 'REJECTED' && reporterPhone) {
           await sendMessage(
             reporterPhone,
             `❌ Halo ${reporterName || ''}, permintaan credit limit top up untuk ${farmerName || 'farmer'} ditolak.\n\nAlasan: ${reason}\n\nKamu bisa submit ulang dengan ketik *START*.\n\n_(Your credit limit top-up request for ${farmerName || 'farmer'} was rejected. Reason: ${reason}. Type START to resubmit.)_`
           );
         }
 
-        console.log(`[Sheet Update] REJECTED ${requestId} by ${reviewedBy}: ${reason}`);
+        if (status === 'APPROVED' && reporterPhone) {
+          await sendMessage(
+            reporterPhone,
+            `✅ Halo ${reporterName || ''}, permintaan credit limit top up untuk ${farmerName || 'farmer'} sudah di-approve oleh ${reviewedBy || 'Ops'}.\n\nTim engineering akan segera memprosesnya.\n\n_(Your credit limit top-up request for ${farmerName || 'farmer'} has been approved by ${reviewedBy || 'Ops'}.)_`
+          );
+        }
+
+        console.log(`[Sheet Update] ${status} ${requestId} by ${reviewedBy}${reason ? ': ' + reason : ''}`);
       }
     } catch (err: any) {
       console.error("[Sheet Update] Error:", err.message);
