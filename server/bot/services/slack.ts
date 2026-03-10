@@ -1,6 +1,13 @@
 import axios from 'axios';
 import type { BotSession } from '../session';
 
+function formatIDR(value: any): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const num = typeof value === 'number' ? value : Number(String(value).replace(/[^0-9.-]/g, ''));
+  if (isNaN(num)) return String(value);
+  return `IDR ${num.toLocaleString('en-US')}`;
+}
+
 function getWIBTimestamp(): string {
   const now = new Date();
   return (
@@ -362,8 +369,8 @@ export function buildCreditLimitBlocks(session: BotSession, data: Record<string,
     {
       type: 'section',
       fields: [
-        { type: 'mrkdwn', text: `*Current Limit:* ${data.currentLimit}` },
-        { type: 'mrkdwn', text: `*Requested Top-Up:* ${data.requestedTopUp}` },
+        { type: 'mrkdwn', text: `*Current Limit:* ${formatIDR(data.currentLimit)}` },
+        { type: 'mrkdwn', text: `*Requested Top-Up:* ${formatIDR(data.requestedTopUp)}` },
       ],
     },
     {

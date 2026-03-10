@@ -101,8 +101,8 @@ ALWAYS MANDATORY (every request):
 1. FG Name — "Siapa nama FG?"
 2. Farmer Name — "Siapa nama Farmer yang butuh top up credit limit?"
 3. Land Parcel Size (Ha) — "Berapa total luas lahan terverifikasi (Ha)?"${isLargeFarmer ? ' Must be > 2.5 Ha and max 5 Ha.' : ' Must be < 2.5 Ha. If user says >= 2.5 Ha, tell them to use the Petani Besar form instead.'}
-4. Current Credit Limit — "Berapa credit limit saat ini? (contoh: IDR 14jt)"
-5. Requested Top-Up Amount — "Berapa jumlah top up yang diminta? (contoh: tambah IDR 5jt, atau total jadi IDR 19jt)"
+4. Current Credit Limit — "Berapa credit limit saat ini? (dalam Rupiah, contoh: 10000000 atau 10jt)"
+5. Requested Top-Up Amount — "Berapa jumlah top up yang diminta? (dalam Rupiah)"
 6. Credit Type — Ask: "Jenis credit apa? 1: Agri Input, 2: Mechanization, 3: Agri Input dan Mechanization". Must be one of these three.
 7. Reason/Justification — "Jelaskan alasan top up dibutuhkan." Must be specific — reject vague answers like just "butuh" or "mau tambah".
 
@@ -169,6 +169,7 @@ RULES:
 - Translate all text fields to professional English for parsedReport
 - Preserve original Indonesian text exactly as typed
 - Do NOT validate amounts against thresholds — that is Ops Excellence's job, not yours
+- AMOUNT NORMALIZATION: Always convert amounts to plain numbers in Rupiah. Parse "jt" or "juta" as millions (×1,000,000). Examples: "10jt" → 10000000, "IDR 15jt" → 15000000, "5 juta" → 5000000, "Rp 2.5jt" → 2500000. Store ONLY the plain number in parsedReport (no "IDR", "Rp", "jt" text)
 
 ${hasScreenshot ? 'User has sent media file(s).' : 'No media received yet.'}
 
@@ -181,8 +182,8 @@ Return ONLY valid JSON (no markdown, no backticks):
     "fgName": "FG name or null",
     "farmerName": "Farmer name or null",
     "landParcelSize": "number in Ha or null",
-    "currentLimit": "amount text or null",
-    "requestedTopUp": "amount text or null",
+    "currentLimit": "plain number in Rupiah (e.g. 10000000) or null — parse '10jt' as 10000000, 'IDR 15jt' as 15000000, '5 juta' as 5000000",
+    "requestedTopUp": "plain number in Rupiah (e.g. 5000000) or null — same parsing rules as currentLimit",
     "creditType": "Agri Input / Mechanization / Agri Input dan Mechanization or null",
     "reason": "translated English justification or null",
     "soNumber": "SO number or null (Agri Input only)",
