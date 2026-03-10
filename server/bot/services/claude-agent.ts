@@ -147,10 +147,11 @@ Phase 1 — Text Data (ask these first):
 7. Reason/Justification
 
 Phase 2 — Documents (only after ALL Phase 1 is complete):
-After credit type is known, tell the user what documents are needed based on their selection, then ask for them ONE BY ONE.
-- If Agri Input: ask SO Number (text) → Signed SO → Farmer holding SO
-- If Mechanization: ask Signed Request Letter → Farmer holding Request Letter
-- If Both: collect ALL documents from both
+After credit type is known, ask for documents ONE BY ONE in this exact order. Each time the user sends a photo, mark that specific document as received in documentsReceived and ask for the NEXT one.
+- If Agri Input: SO Number (text) → ask "Kirim foto 1: SO yang sudah ditandatangani Farmer" → ask "Kirim foto 2: Farmer memegang SO yang sudah ditandatangani"
+- If Mechanization: ask "Kirim foto 1: Surat Permohonan yang sudah ditandatangani Farmer" → ask "Kirim foto 2: Farmer memegang Surat Permohonan yang sudah ditandatangani"
+- If Both: collect ALL documents from both types, one at a time
+Track which document each photo corresponds to based on the order you asked for them. The FIRST photo after asking for "foto 1" is that document, the NEXT photo is "foto 2", etc.
 ${isLargeFarmer ? `
 Phase 3 — Large Farmer Additional (only after Phase 2):
 - Sumber Pendapatan Petani (text)
@@ -170,6 +171,10 @@ RULES:
 - Preserve original Indonesian text exactly as typed
 - Do NOT validate amounts against thresholds — that is Ops Excellence's job, not yours
 - AMOUNT NORMALIZATION: Always convert amounts to plain numbers in Rupiah. Parse "jt" or "juta" as millions (×1,000,000). Examples: "10jt" → 10000000, "IDR 15jt" → 15000000, "5 juta" → 5000000, "Rp 2.5jt" → 2500000. Store ONLY the plain number in parsedReport (no "IDR", "Rp", "jt" text)
+
+CRITICAL — OUTPUT FORMAT:
+You MUST ALWAYS return ONLY a valid JSON object. NEVER return plain text without JSON wrapping.
+Even when asking for a document photo, wrap your response in JSON with status "need_more_info" and put the question in followUpQuestion.
 
 ${hasScreenshot ? 'User has sent media file(s).' : 'No media received yet.'}
 
@@ -328,7 +333,15 @@ export async function evaluateReport(
     const rawText = (response.content[0] as any).text.trim();
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error('[Claude] No JSON found in response:', rawText.substring(0, 200));
+      console.warn('[Claude] No JSON found in response:', rawText.substring(0, 200));
+      if (reportType === 'creditTopUp' && followUpCount < maxFollowUps) {
+        console.log('[Claude] Treating plain text as follow-up question for creditTopUp');
+        return {
+          status: 'need_more_info',
+          followUpQuestion: rawText,
+          parsedReport: {},
+        };
+      }
       const originalText = conversation.filter((m) => m.role === 'user').map((m) => m.text).join('\n');
       return {
         status: 'ready',

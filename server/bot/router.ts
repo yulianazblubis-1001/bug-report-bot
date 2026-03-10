@@ -286,7 +286,12 @@ export async function handleMessage(
       currentSession.creditLimitType
     );
 
-    currentSession.parsedReport = result.parsedReport;
+    if (result.parsedReport && Object.keys(result.parsedReport).length > 0) {
+      currentSession.parsedReport = {
+        ...(currentSession.parsedReport || {}),
+        ...result.parsedReport,
+      };
+    }
 
     if (result.status === 'need_more_info' && result.followUpQuestion && currentSession.followUpCount < maxFollowUps) {
       currentSession.followUpCount++;
