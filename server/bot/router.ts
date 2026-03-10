@@ -627,8 +627,13 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
 
     try {
       await googleSheets.appendRequest(sheetRow);
+      console.log('[CreditLimit] Google Sheet write successful for', requestId);
     } catch (err: any) {
       console.error('[CreditLimit] Failed to write to Google Sheets:', err.message);
+      console.error('[CreditLimit] Full error stack:', err.stack);
+      if (err.response?.data) {
+        console.error('[CreditLimit] API error details:', JSON.stringify(err.response.data));
+      }
     }
 
     addReportLog({

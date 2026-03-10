@@ -4,9 +4,11 @@ let connectionSettings: any;
 
 async function getAccessToken() {
   if (connectionSettings && connectionSettings.settings.expires_at && new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
+    console.log('[Google Sheets] Using cached access token (expires:', connectionSettings.settings.expires_at, ')');
     return connectionSettings.settings.access_token;
   }
 
+  console.log('[Google Sheets] Fetching fresh access token from Replit connector...');
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? 'repl ' + process.env.REPL_IDENTITY
@@ -18,25 +20,35 @@ async function getAccessToken() {
     throw new Error('X-Replit-Token not found for repl/depl');
   }
 
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=google-sheet',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X-Replit-Token': xReplitToken,
-      },
-    }
-  ).then(res => res.json()).then(data => data.items?.[0]);
+  const url = 'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=google-sheet';
+  console.log('[Google Sheets] Connector URL:', url);
+
+  const rawResponse = await fetch(url, {
+    headers: {
+      'Accept': 'application/json',
+      'X-Replit-Token': xReplitToken,
+    },
+  });
+
+  const responseData = await rawResponse.json();
+  console.log('[Google Sheets] Connector response status:', rawResponse.status);
+  console.log('[Google Sheets] Connector items count:', responseData.items?.length || 0);
+
+  connectionSettings = responseData.items?.[0];
 
   if (!connectionSettings || !connectionSettings.settings) {
+    console.error('[Google Sheets] No connection settings found. Full response:', JSON.stringify(responseData).substring(0, 500));
     throw new Error('Google Sheet not connected — please check the integration in Replit settings');
   }
 
   const accessToken = connectionSettings.settings.access_token || connectionSettings.settings?.oauth?.credentials?.access_token;
 
   if (!accessToken) {
+    console.error('[Google Sheets] No access token in settings. Keys:', Object.keys(connectionSettings.settings).join(', '));
     throw new Error('Google Sheet access token not available — integration may need re-authorization');
   }
+
+  console.log('[Google Sheets] Access token obtained successfully');
   return accessToken;
 }
 
@@ -93,8 +105,29 @@ export interface CreditLimitRow {
 }
 
 export async function appendRequest(data: CreditLimitRow): Promise<void> {
-  const sheets = await getUncachableGoogleSheetClient();
+  console.log('[Google Sheets] appendRequest called for request:', data.requestId);
+  console.log('[Google Sheets] Data keys:', Object.keys(data).join(', '));
+  console.log('[Google Sheets] Data values preview:', JSON.stringify({
+    timestamp: data.timestamp,
+    requestId: data.requestId,
+    reporterName: data.reporterName,
+    fgName: data.fgName,
+    farmerName: data.farmerName,
+    status: data.status,
+    slackMessageTs: data.slackMessageTs,
+  }));
+
+  let sheets;
+  try {
+    sheets = await getUncachableGoogleSheetClient();
+    console.log('[Google Sheets] Client obtained successfully');
+  } catch (err: any) {
+    console.error('[Google Sheets] Failed to get client:', err.message);
+    throw err;
+  }
+
   const spreadsheetId = getSheetId();
+  console.log('[Google Sheets] Using spreadsheet ID:', spreadsheetId);
 
   const row = [
     data.timestamp,           // A
@@ -122,14 +155,23 @@ export async function appendRequest(data: CreditLimitRow): Promise<void> {
     data.slackMessageTs,      // W
   ];
 
-  await sheets.spreadsheets.values.append({
-    spreadsheetId,
-    range: 'Sheet1!A:W',
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [row] },
-  });
+  console.log('[Google Sheets] Row array length:', row.length, '(expected 23)');
+  console.log('[Google Sheets] Row data:', JSON.stringify(row));
 
-  console.log(`[Google Sheets] Appended row for request ${data.requestId}`);
+  try {
+    const result = await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: 'Sheet1!A:W',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [row] },
+    });
+    console.log('[Google Sheets] Append SUCCESS for request', data.requestId);
+    console.log('[Google Sheets] Append response:', JSON.stringify(result.data));
+  } catch (err: any) {
+    console.error('[Google Sheets] Append FAILED:', err.message);
+    console.error('[Google Sheets] Full error:', JSON.stringify(err.response?.data || err));
+    throw err;
+  }
 }
 
 export async function updateStatus(

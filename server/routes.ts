@@ -14,6 +14,40 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  app.get("/api/bot/test-sheets", async (_req, res) => {
+    try {
+      const testRow: googleSheets.CreditLimitRow = {
+        timestamp: new Date().toISOString(),
+        requestId: 'TEST-' + Date.now(),
+        reporterName: 'Test User',
+        reporterPhone: '628000000000',
+        fgName: 'Test FG',
+        farmerName: 'Test Farmer',
+        landSizeVerified: '1.5',
+        currentLimit: 'IDR 10jt',
+        requestedTopUp: 'IDR 5jt',
+        creditType: 'Agri Input',
+        reason: 'Test reason',
+        soNumber: 'SO-TEST-001',
+        farmerIncomeAndBusiness: '',
+        collateralInfo: '',
+        docSignedSO: '',
+        docFarmerHolding: '',
+        docLandOwnership: '',
+        docJaminan: '',
+        status: 'TEST',
+        reviewedBy: '',
+        reviewDate: '',
+        rejectionReason: '',
+        slackMessageTs: '',
+      };
+      await googleSheets.appendRequest(testRow);
+      res.json({ success: true, requestId: testRow.requestId });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message, stack: err.stack });
+    }
+  });
+
   app.get("/api/bot/status", (_req, res) => {
     const configStatus = {
       wati: !!(process.env.WATI_API_ENDPOINT && process.env.WATI_TOKEN),
