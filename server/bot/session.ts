@@ -18,8 +18,9 @@ export interface BotSession {
   phoneNumber: string;
   senderName: string;
   profile: AgronomistProfile | null;
-  step: 'SELECT_TYPE' | 'SELECT_ADMIN_TYPE' | 'COLLECTING' | 'CONFIRMING';
+  step: 'SELECT_TYPE' | 'SELECT_ADMIN_TYPE' | 'SELECT_CREDIT_TYPE' | 'COLLECTING' | 'CONFIRMING';
   reportType: 'bug' | 'admin' | 'creditTopUp' | null;
+  creditLimitType: 'standard' | 'largeFarmer' | null;
   conversation: ConversationMessage[];
   mediaUrls: string[];
   followUpCount: number;
@@ -64,6 +65,7 @@ class SessionStore {
       profile: profile || null,
       step: 'SELECT_TYPE',
       reportType: null,
+      creditLimitType: null,
       conversation: [],
       mediaUrls: [],
       followUpCount: 0,

@@ -318,14 +318,19 @@ async function uploadFileToSlack(
 export function buildCreditLimitBlocks(session: BotSession, data: Record<string, any>): any[] {
   const profile = session.profile;
   const timestamp = getWIBTimestamp();
-  const landSize = parseFloat(data.landParcelSize) || 0;
-  const isLargeFarmer = landSize > 2.5;
-  const isAgriInput = data.creditType === 'Agri Input';
+  const isLargeFarmer = data.creditLimitType === 'largeFarmer';
+  const creditType = data.creditType || '';
+  const includesAgriInput = creditType.includes('Agri Input');
+  const includesMechanization = creditType.includes('Mechanization');
+
+  const headerText = isLargeFarmer
+    ? '🏦 CREDIT LIMIT TOP UP — PETANI BESAR'
+    : '🏦 CREDIT LIMIT TOP UP REQUEST';
 
   const blocks: any[] = [
     {
       type: 'header',
-      text: { type: 'plain_text', text: '🏦 CREDIT LIMIT TOP UP REQUEST', emoji: true },
+      text: { type: 'plain_text', text: headerText, emoji: true },
     },
     { type: 'divider' },
     {
@@ -351,7 +356,7 @@ export function buildCreditLimitBlocks(session: BotSession, data: Record<string,
       type: 'section',
       fields: [
         { type: 'mrkdwn', text: `*Land Parcel Size:* ${data.landParcelSize} Ha${isLargeFarmer ? ' ⚠️ LARGE FARMER' : ''}` },
-        { type: 'mrkdwn', text: `*Credit Type:* ${data.creditType}` },
+        { type: 'mrkdwn', text: `*Credit Type:* ${creditType}` },
       ],
     },
     {
@@ -367,41 +372,53 @@ export function buildCreditLimitBlocks(session: BotSession, data: Record<string,
     },
   ];
 
-  if (isAgriInput && data.soNumber) {
+  if (includesAgriInput && data.soNumber) {
     blocks.push({
       type: 'section',
       text: { type: 'mrkdwn', text: `*SO Number:* ${data.soNumber}` },
     });
   }
 
-  if (data.validationFlags && data.validationFlags.length > 0) {
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: `*⚠️ Validation Flags:*\n${data.validationFlags.map((f: string) => `• ${f}`).join('\n')}` },
-    });
+  if (isLargeFarmer) {
+    blocks.push({ type: 'divider' });
+    const largeFarmerFields: any[] = [];
+    if (data.farmerIncomeSources) largeFarmerFields.push({ type: 'mrkdwn', text: `*Sumber Pendapatan:*\n${data.farmerIncomeSources}` });
+    if (data.businessPotential) largeFarmerFields.push({ type: 'mrkdwn', text: `*Potensi Bisnis:*\n${data.businessPotential}` });
+    if (largeFarmerFields.length > 0) {
+      blocks.push({ type: 'section', fields: largeFarmerFields });
+    }
+    const extraFields: any[] = [];
+    if (data.collateralType) extraFields.push({ type: 'mrkdwn', text: `*Jenis Jaminan:* ${data.collateralType}` });
+    if (data.creditLimitRequestAmount) extraFields.push({ type: 'mrkdwn', text: `*Limit Kredit Diminta:* ${data.creditLimitRequestAmount}` });
+    if (extraFields.length > 0) {
+      blocks.push({ type: 'section', fields: extraFields });
+    }
   }
 
   blocks.push({ type: 'divider' });
 
   let docList = '';
-  if (isAgriInput) {
+  let docCount = 0;
+  if (includesAgriInput) {
     docList += `• Signed SO ${data.docSignedSO ? `✅ <${data.docSignedSO}|View>` : '❌'}\n`;
-    docList += `• Farmer holding SO ${data.docFarmerHolding ? `✅ <${data.docFarmerHolding}|View>` : '❌'}\n`;
-  } else {
-    docList += `• Signed Request Letter ${data.docSignedSO ? `✅ <${data.docSignedSO}|View>` : '❌'}\n`;
-    docList += `• Farmer holding Request Letter ${data.docFarmerHolding ? `✅ <${data.docFarmerHolding}|View>` : '❌'}\n`;
+    docList += `• Farmer holding SO ${data.docFarmerHoldingSO ? `✅ <${data.docFarmerHoldingSO}|View>` : '❌'}\n`;
+    if (data.docSignedSO) docCount++;
+    if (data.docFarmerHoldingSO) docCount++;
   }
-
+  if (includesMechanization) {
+    docList += `• Signed Request Letter ${data.docSignedRequestLetter ? `✅ <${data.docSignedRequestLetter}|View>` : '❌'}\n`;
+    docList += `• Farmer holding Request Letter ${data.docFarmerHoldingRequestLetter ? `✅ <${data.docFarmerHoldingRequestLetter}|View>` : '❌'}\n`;
+    if (data.docSignedRequestLetter) docCount++;
+    if (data.docFarmerHoldingRequestLetter) docCount++;
+  }
   if (isLargeFarmer) {
     docList += `• Proof of land ownership ${data.docLandOwnership ? `✅ <${data.docLandOwnership}|View>` : '❌'}\n`;
-    docList += `• Dokumen Jaminan ${data.docJaminan ? `✅ <${data.docJaminan}|View>` : '❌'}\n`;
+    docList += `• Collateral photo ${data.docCollateralPhoto ? `✅ <${data.docCollateralPhoto}|View>` : '❌'}\n`;
+    docList += `• Collateral certificate ${data.docCollateralCertificate ? `✅ <${data.docCollateralCertificate}|View>` : '❌'}\n`;
+    if (data.docLandOwnership) docCount++;
+    if (data.docCollateralPhoto) docCount++;
+    if (data.docCollateralCertificate) docCount++;
   }
-
-  let docCount = 0;
-  if (data.docSignedSO) docCount++;
-  if (data.docFarmerHolding) docCount++;
-  if (data.docLandOwnership) docCount++;
-  if (data.docJaminan) docCount++;
 
   blocks.push({
     type: 'section',

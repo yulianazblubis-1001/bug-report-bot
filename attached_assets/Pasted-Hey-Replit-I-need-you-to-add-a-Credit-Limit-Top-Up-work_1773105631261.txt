@@ -1,0 +1,264 @@
+Hey Replit, I need you to add a **Credit Limit Top-Up workflow** to my existing WhatsApp bot. This builds on the existing architecture — specifically `claude-agent.ts` and the router/session system. Here is the full specification:
+## Overview
+Currently the bot supports `bug` and `admin` report types. I need to add a third report type: **`creditTopUp`**. This type has a more complex workflow involving Google Sheets, Google Drive (for uploading photos), Slack thread-based approvals, and data validation by Claude.
+---
+## Step 1: Add Sub-Menus
+When a user selects "2" (Admin Request) in the main menu, show:
+```
+🛠️ Admin Request
+Pilih jenis permintaan:
+1️⃣ General Request (reset password, dll)
+2️⃣ Credit Limit Top Up
+Balas 1 atau 2.
+```
+If user picks 2, show a **second sub-menu** for the credit limit type:
+```
+🏦 Credit Limit Top Up
+Pilih jenis pengajuan:
+1️⃣ Top-Up Credit (Lahan < 2.5 Ha)
+2️⃣ Petani Besar / Large Farmer (Lahan > 2.5 Ha s/d 5 Ha)
+Balas 1 atau 2.
+```
+- If user picks 1 → set `creditLimitType = 'standard'` and enter Claude conversation
+- If user picks 2 → set `creditLimitType = 'largeFarmer'` and enter Claude conversation
+The `creditLimitType` is passed to the system prompt so Claude knows which fields to collect.
+---
+## Step 2: Add `creditTopUp` System Prompt in `claude-agent.ts`
+In `buildSystemPrompt()`, add a third case for `reportType === 'creditTopUp'`. The system prompt should adapt based on `creditLimitType` (passed as an additional parameter).
+```typescript
+if (reportType === 'creditTopUp') {
+  const isLargeFarmer = creditLimitType === 'largeFarmer';
+  
+  return `You are a Credit Limit Top-Up request assistant for Rize.farm, an agri-fintech in Indonesia.
+The user (an agronomist) is requesting a credit limit increase for a farmer via WhatsApp. Your job is to:
+1. Collect ALL mandatory information
+2. Collect mandatory supporting documents (photos)
+3. Produce a structured report for the Ops Excellence team
+${isLargeFarmer ? 'This is a LARGE FARMER request (lahan > 2.5 Ha). Additional data and documents are required.' : 'This is a standard credit top-up request (lahan < 2.5 Ha).'}
+ALWAYS MANDATORY (every request):
+1. FG Name — "Siapa nama FG?"
+2. Farmer Name — "Siapa nama Farmer yang butuh top up credit limit?"
+3. Land Parcel Size (Ha) — "Berapa total luas lahan terverifikasi (Ha)?"${isLargeFarmer ? ' Must be > 2.5 Ha and max 5 Ha.' : ' Must be < 2.5 Ha. If user says >= 2.5 Ha, tell them to use the Petani Besar form instead.'}
+4. Current Credit Limit — "Berapa credit limit saat ini? (contoh: IDR 14jt)"
+5. Requested Top-Up Amount — "Berapa jumlah top up yang diminta? (contoh: tambah IDR 5jt, atau total jadi IDR 19jt)"
+6. Credit Type — Ask: "Jenis credit apa? 1: Agri Input, 2: Mechanization, 3: Agri Input dan Mechanization". Must be one of these three.
+7. Reason/Justification — "Jelaskan alasan top up dibutuhkan." Must be specific — reject vague answers like just "butuh" or "mau tambah".
+CONDITIONAL DOCUMENTS — Based on Credit Type:
+If Credit Type includes Agri Input (option 1 or 3):
+- SO Number — "Berapa nomor Sales Order (SO)?"
+- Signed SO photo — "Kirim foto SO yang sudah ditandatangani Farmer. WAJIB."
+- Farmer holding SO photo — "Kirim foto Farmer memegang SO yang sudah ditandatangani. WAJIB."
+If Credit Type includes Mechanization (option 2 or 3):
+- Signed Request Letter photo — "Kirim foto Surat Permohonan yang sudah ditandatangani Farmer. WAJIB."
+- Farmer holding Request Letter photo — "Kirim foto Farmer memegang Surat Permohonan yang sudah ditandatangani. WAJIB."
+If option 3 (both), collect ALL documents from both Agri Input AND Mechanization.
+${isLargeFarmer ? `LARGE FARMER — ADDITIONAL MANDATORY FIELDS:
+These are REQUIRED for Large Farmer requests:
+- Sumber Pendapatan Petani (Farmer Income Sources) — "Sebutkan sumber pendapatan petani. Contoh: Utama (Padi) - IDR 45jt/musim, Sampingan (Palawija) - IDR 5jt, Ternak - 3 Sapi/Aset 30jt, Usaha Luar Tani - warung IDR 2jt/bulan, Aset Likuidasi - Honda Vario 2023"
+- Potensi Bisnis dengan Petani — "Apa potensi bisnis yang diharapkan ketika bekerja sama dengan Petani ini?"
+- Proof of land ownership or rental document — "Kirim bukti kepemilikan atau sewa lahan yang membuktikan petani mengolah lahan > 2.5 Ha. WAJIB."
+- Collateral Type (Jaminan) — "Jenis jaminan apa? 1: Surat Tanah, 2: BPKB (Surat Kendaraan), 3: Perhiasan, 4: SK Dinas, 5: Lainnya"
+- Collateral Photo — "Kirim foto jaminan tersebut. WAJIB."
+- Collateral Certificate — "Kirim foto sertifikat jaminan. WAJIB."
+- Credit Limit Request Amount — "Berapa limit kredit yang diminta untuk petani? (dalam Rupiah)"` : ''}
+PERSONALITY:
+- Be strict and firm (tegas). You are a gatekeeper — do not accept incomplete data.
+- If data is missing or vague, firmly ask again. Do not be overly friendly or chatty.
+- Be professional and direct.
+- Do NOT make up rules or reject data based on amounts. Only reject if data is clearly incomplete or nonsensical.
+RULES:
+- Ask only ONE question at a time
+- Do NOT return status "ready" until ALL mandatory fields AND all required documents are received
+- You can ask up to ${isLargeFarmer ? '12' : '8'} follow-up questions for this flow
+- When counting required documents, check how many media files have been sent vs how many are required
+- Translate all text fields to professional English for parsedReport
+- Preserve original Indonesian text exactly as typed
+- Do NOT validate amounts against thresholds — that is Ops Excellence's job, not yours
+${hasScreenshot ? 'User has sent media file(s).' : 'No media received yet.'}
+Return ONLY valid JSON (no markdown, no backticks):
+{
+  "status": "need_more_info" or "ready",
+  "followUpQuestion": "question in Indonesian (only if need_more_info)",
+  "parsedReport": {
+    "title": "[Credit Limit] Short English summary",
+    "fgName": "FG name or null",
+    "farmerName": "Farmer name or null",
+    "landParcelSize": "number in Ha or null",
+    "currentLimit": "amount text or null",
+    "requestedTopUp": "amount text or null",
+    "creditType": "Agri Input / Mechanization / Agri Input dan Mechanization or null",
+    "reason": "translated English justification or null",
+    "soNumber": "SO number or null (Agri Input only)",
+    "isLargeFarmer": ${isLargeFarmer},
+    "farmerIncomeSources": "income sources text or null",
+    "businessPotential": "business potential text or null",
+    "collateralType": "type or null",
+    "creditLimitRequestAmount": "amount or null (Large Farmer only)",
+    "documentsReceived": {
+      "signedSO": true/false,
+      "farmerHoldingSO": true/false,
+      "signedRequestLetter": true/false,
+      "farmerHoldingRequestLetter": true/false,
+      "landOwnershipProof": true/false,
+      "collateralPhoto": true/false,
+      "collateralCertificate": true/false
+    },
+    "category": "Credit Limit Top Up",
+    "originalText": "exact original text as user typed it, concatenated"
+  }
+}
+ALWAYS include parsedReport even if status is need_more_info (use what you have so far).`;
+}
+```
+Also update the `followUpCount` cap — for `creditTopUp` type, allow up to 12 follow-ups for Large Farmer (since this flow has many mandatory fields and documents) and 8 for standard.
+---
+## Step 3: Install Dependencies & Create Google Services
+**Install:** `npm install googleapis uuid`
+### Create `src/services/google-drive.ts`
+When the bot receives photos/documents from WhatsApp (via WATI media URLs):
+1. Download the file from the WATI media URL
+2. Upload it to a shared Google Drive folder using the Drive API
+3. Set permissions to "anyone with the link can view"
+4. Return the Google Drive URL
+### Create `src/services/google-sheets.ts`
+Google Sheets integration for tracking credit limit requests.
+**Column structure (21 columns, headers already set up in the sheet):**
+| Col | Header | Source |
+|-----|--------|--------|
+| A | Timestamp | Auto-generated (WIB) |
+| B | Request ID | Auto-generated UUID |
+| C | Reporter Name | WhatsApp session |
+| D | Reporter Phone | WhatsApp session |
+| E | FG | Claude parsedReport.fgName |
+| F | Farmer | Claude parsedReport.farmerName |
+| G | Land Size Verified | Claude parsedReport.landParcelSize |
+| H | Current Limit | Claude parsedReport.currentLimit |
+| I | Requested Top-Up | Claude parsedReport.requestedTopUp |
+| J | Credit Type | Claude parsedReport.creditType |
+| K | Reason | Claude parsedReport.reason |
+| L | SO Number | Claude parsedReport.soNumber |
+| M | Doc: Signed SO / Request Letter | Google Drive URL |
+| N | Doc: Farmer Holding Document | Google Drive URL |
+| O | Doc: Land Ownership Proof | Google Drive URL (Large Farmer only) |
+| P | Doc: Dokumen Jaminan | Google Drive URL (Large Farmer only) |
+| Q | Status | PENDING → APPROVED / REJECTED → RESOLVED |
+| R | Reviewed By | From Slack thread reply |
+| S | Review Date | Auto-generated |
+| T | Rejection Reason | From Slack thread (if rejected) |
+| U | Slack Message TS | System (for linking) |
+**Functions needed:**
+1. `appendRequest(data)` — Append row, Status = "PENDING"
+2. `updateStatus(slackTs, status, reviewedBy, reason?)` — Update cols Q–T
+3. `findBySlackTs(slackTs)` — Find row by Slack message TS
+---
+## Step 4: Update Slack Service for Credit Limit Posts
+Add a `postCreditLimitRequest()` function that posts to Slack using the **Web API** (`chat.postMessage` via `SLACK_BOT_TOKEN`), NOT the incoming webhook. We need the message `ts` back for thread tracking.
+**Post to channel:** `C0766PKUK1N`
+**Message format:**
+```
+🏦 CREDIT LIMIT TOP UP REQUEST | Rize.farm
+━━━━━━━━━━━━━━━━━━━━
+👤 Requestor: [name] | [phone]
+🆔 Request ID: [uuid]
+🕐 Submitted: [timestamp WIB]
+━━━━━━━━━━━━━━━━━━━━
+🌾 FG: [fg name]
+👨‍🌾 Farmer: [farmer name]
+📐 Land Size: [X] Ha [⚠️ LARGE FARMER if >2.5 Ha]
+💰 Current Limit: [amount]
+📈 Requested Top-Up: [amount]
+🏷️ Credit Type: [Agri Input / Mechanization]
+📝 Reason: [justification]
+📋 SO Number: [number] (Agri Input only)
+⚠️ Validation Flags: [any flags from Claude, or "None"]
+📎 Documents: [list with Google Drive links]
+━━━━━━━━━━━━━━━━━━━━
+⏳ Status: PENDING APPROVAL
+<@USER_ID_1> <@USER_ID_2> <@USER_ID_3> — Please review and reply in this thread:
+• Type APPROVED to approve
+• Type REJECTED [reason] to reject
+```
+Read the `SLACK_MENTION_OPS` env var (comma-separated Slack User IDs), split by comma, and format each as `<@USER_ID>`.
+After posting, store the returned message `ts` in the Google Sheet (column U) and in the session/slack mapping for reaction tracking.
+---
+## Step 5: Handle Approvals & Rejections from Google Sheet
+**IMPORTANT:** The source of truth for approval/rejection is the **Google Sheet**, NOT Slack. Ops Excellence will change the Status column (Q) directly in the Sheet. When that happens, we need to trigger actions.
+### How it works:
+1. Ops Excellence opens the Google Sheet
+2. They review the request row
+3. They change column Q (Status) from "PENDING" to "APPROVED" or "REJECTED"
+4. If rejected, they also fill column T (Rejection Reason)
+5. This triggers a **Google Apps Script `onEdit` hook** which calls your bot's webhook
+### Create a new endpoint: `POST /sheet-update`
+Add a new endpoint in `src/index.js` that receives webhook calls from Google Apps Script when the Sheet status changes:
+```typescript
+app.post('/sheet-update', async (req, res) => {
+  // Body will contain: { requestId, status, reviewedBy, rejectionReason, slackTs, reporterPhone, reporterName, farmerName }
+  // Handle APPROVED or REJECTED
+});
+```
+**If status = APPROVED:**
+- Add `:git-approved:` reaction to the original Slack message (using `slackTs` and `reactions.add` API)
+- Post a thread reply on the Slack message: "✅ Approved by [reviewedBy]. Engineers — please process this credit limit top-up. React ✅ when done."
+- Do NOT send WhatsApp yet (wait for engineer to react ✅)
+**If status = REJECTED:**
+- Add `:rejected:` reaction to the original Slack message
+- Post a thread reply: "❌ Rejected by [reviewedBy]. Reason: [rejectionReason]. User has been notified."
+- Send WhatsApp to the reporter: "❌ Halo [name], permintaan credit limit top up untuk [Farmer] ditolak.\n\nAlasan: [reason]\n\nKamu bisa submit ulang dengan ketik START.\n\n_(Your credit limit top-up request for [Farmer] was rejected. Reason: [reason]. Type START to resubmit.)_"
+### Google Apps Script (to be added in the Google Sheet)
+Tell Replit to also provide me with a Google Apps Script that I will paste into the Google Sheet (Extensions → Apps Script). The script should:
+1. Use an `onEdit(e)` trigger
+2. Detect when column Q (Status) is changed on Sheet1
+3. When changed to "APPROVED" or "REJECTED", read the full row data
+4. Send a POST request to my bot's `/sheet-update` endpoint with: `{ requestId, status, reviewedBy (from col R), rejectionReason (from col T), slackTs (from col U), reporterPhone (from col D), reporterName (from col C), farmerName (from col F) }`
+5. The bot URL should be read from a Script Property called `BOT_WEBHOOK_URL`
+**IMPORTANT:** The `onEdit` simple trigger can't make HTTP requests. Use an **Installable trigger** instead (the script should include instructions on how to set it up), or use `onEdit` to call a function that uses `UrlFetchApp.fetch()`.
+---
+## Step 6: Handle Engineer Resolution (Reaction)
+Extend the existing reaction handler. When engineer reacts with ✅ (`:white_check_mark:` or `:done:`) on a credit limit request:
+- Update Google Sheet: Status = "RESOLVED"
+- Send WhatsApp: "✅ Halo [name]! Credit limit top up untuk [Farmer] sudah diproses! Silakan cek di app. 🙏"
+---
+## Step 7: Update Router
+- Add `SELECT_ADMIN_TYPE` step for the sub-menu
+- When `reportType === 'creditTopUp'`, use the existing conversational Claude agent flow (same as bug/admin) but with the new system prompt
+- Allow up to 8 follow-ups for `creditTopUp` instead of the default 3
+- When the report is "ready", run the submission pipeline: upload media to Drive → post to Slack → write to Google Sheet → notify user
+---
+## Step 8: Submission Pipeline for Credit Limit
+When Claude returns `status: "ready"` for a `creditTopUp` report, the submission flow is:
+1. **Upload all media** to Google Drive using the Drive service → get shareable URLs
+2. **Post to Slack** using Web API → get message `ts`
+3. **Append to Google Sheet** with all data including Drive URLs and Slack `ts`
+4. **Send WhatsApp confirmation** to user: "✅ Request credit limit top up berhasil dikirim! Tim Ops Excellence akan review. Kamu akan dinotifikasi hasilnya via WhatsApp."
+5. **Store slack mapping** for reaction tracking
+---
+## New Environment Variables
+```
+# Google Sheets & Drive
+GOOGLE_SHEETS_ID=<spreadsheet ID from URL>
+GOOGLE_SERVICE_ACCOUNT_EMAIL=<service account email>
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+GOOGLE_DRIVE_FOLDER_ID=<Google Drive folder ID for document uploads>
+# Slack Bot (Web API - for credit limit flow)
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_CHANNEL_CREDIT_LIMIT=C0766PKUK1N
+# Slack User IDs to mention (comma-separated)
+# Get from Slack: click profile → ⋯ → Copy member ID
+SLACK_MENTION_OPS=U_DIMAS_ID,U_MIKE_ID,U_RACHIT_ID
+```
+## New npm Dependencies
+```
+npm install googleapis uuid
+```
+---
+## Key Rules — DO NOT BREAK THESE
+1. **Follow the existing `claude-agent.ts` architecture** — add `creditTopUp` as a third report type alongside `bug` and `admin`
+2. **Claude handles the conversation** — collects data, validates logic, asks follow-ups, and decides when "ready" (same pattern as bug/admin)
+3. **Claude also validates data legitimacy** — suspicious amounts, vague justifications, cross-checks between land size and top-up amount
+4. **Conditional documents are handled by Claude's system prompt** — Claude knows which docs to ask for based on credit type and land size
+5. **Google Drive for all document photos** — download from WATI URL → upload to Drive → store Drive link in Sheet
+6. **Google Sheets updated at every stage** — PENDING → APPROVED/REJECTED → RESOLVED
+7. **Thread-based approval** — Ops Excellence replies APPROVED or REJECTED in Slack thread (NOT reactions)
+8. **Reactions for engineer resolution** — Engineer uses ✅ or :done: emoji when done
+9. **Do not break existing Bug Report and Admin Request flows** — they must continue working exactly as before

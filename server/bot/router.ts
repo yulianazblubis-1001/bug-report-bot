@@ -55,6 +55,17 @@ const ADMIN_START_MSG = `Jelaskan apa yang kamu butuhkan. Tulis dengan bahasa ka
 
 _(Describe what you need in your own words.)_`;
 
+const CREDIT_TYPE_SUBMENU_MSG = `🏦 *Credit Limit Top Up*
+
+Pilih jenis pengajuan:
+
+1️⃣ Top-Up Credit (Lahan < 2.5 Ha)
+2️⃣ Petani Besar / Large Farmer (Lahan > 2.5 Ha s/d 5 Ha)
+
+Balas 1 atau 2.
+
+_(Choose type: 1 for Standard, 2 for Large Farmer)_`;
+
 const CREDIT_LIMIT_START_MSG = `🏦 *Credit Limit Top Up*
 
 Jelaskan permintaan credit limit top up kamu. Saya akan memandu kamu mengumpulkan semua informasi yang dibutuhkan.
@@ -63,11 +74,28 @@ Yang wajib dilengkapi:
 - Nama FG dan Farmer
 - Luas lahan (Ha)
 - Credit limit sekarang dan jumlah top up
-- Jenis credit (Agri Input / Mechanization)
+- Jenis credit (Agri Input / Mechanization / Keduanya)
 - Alasan detail
 - Dokumen pendukung (foto)
 
 _(Describe your credit limit top-up request. I'll guide you through all required information.)_`;
+
+const CREDIT_LIMIT_LARGE_START_MSG = `🏦 *Credit Limit Top Up — Petani Besar*
+
+Jelaskan permintaan credit limit top up untuk Petani Besar (lahan > 2.5 Ha). Saya akan memandu kamu mengumpulkan semua informasi yang dibutuhkan.
+
+Yang wajib dilengkapi:
+- Nama FG dan Farmer
+- Luas lahan (Ha) — harus > 2.5 Ha
+- Credit limit sekarang dan jumlah top up
+- Jenis credit (Agri Input / Mechanization / Keduanya)
+- Alasan detail
+- Sumber pendapatan petani
+- Potensi bisnis
+- Jenis jaminan dan dokumennya
+- Dokumen pendukung (foto)
+
+_(Describe your credit limit top-up request for Large Farmer. I'll guide you through all required information.)_`;
 
 const CONFIRM_ONLY_MSG = `Di langkah ini, saya hanya mengerti:
 
@@ -169,7 +197,18 @@ export async function handleMessage(
       return;
     }
     if (cleanText === '2') {
+      currentSession.step = 'SELECT_CREDIT_TYPE';
+      await wati.sendMessage(phoneNumber, CREDIT_TYPE_SUBMENU_MSG);
+      return;
+    }
+    await wati.sendMessage(phoneNumber, `Balas *1* untuk General Request atau *2* untuk Credit Limit Top Up.\n\n_(Reply 1 or 2.)_`);
+    return;
+  }
+
+  if (currentSession.step === 'SELECT_CREDIT_TYPE') {
+    if (cleanText === '1') {
       currentSession.reportType = 'creditTopUp';
+      currentSession.creditLimitType = 'standard';
       currentSession.step = 'COLLECTING';
       currentSession.conversation = [];
       currentSession.mediaUrls = [];
@@ -179,7 +218,19 @@ export async function handleMessage(
       await wati.sendMessage(phoneNumber, CREDIT_LIMIT_START_MSG);
       return;
     }
-    await wati.sendMessage(phoneNumber, `Balas *1* untuk General Request atau *2* untuk Credit Limit Top Up.\n\n_(Reply 1 or 2.)_`);
+    if (cleanText === '2') {
+      currentSession.reportType = 'creditTopUp';
+      currentSession.creditLimitType = 'largeFarmer';
+      currentSession.step = 'COLLECTING';
+      currentSession.conversation = [];
+      currentSession.mediaUrls = [];
+      currentSession.followUpCount = 0;
+      currentSession.parsedReport = null;
+      currentSession.data = {};
+      await wati.sendMessage(phoneNumber, CREDIT_LIMIT_LARGE_START_MSG);
+      return;
+    }
+    await wati.sendMessage(phoneNumber, `Balas *1* untuk Top-Up Credit (< 2.5 Ha) atau *2* untuk Petani Besar (> 2.5 Ha).\n\n_(Reply 1 or 2.)_`);
     return;
   }
 
@@ -224,13 +275,15 @@ export async function handleMessage(
     await wati.sendMessage(phoneNumber, analyzingMsg);
 
     const hasScreenshot = currentSession.mediaUrls.length > 0;
-    const maxFollowUps = currentSession.reportType === 'creditTopUp' ? 8 : 3;
+    const isLargeFarmer = currentSession.creditLimitType === 'largeFarmer';
+    const maxFollowUps = currentSession.reportType === 'creditTopUp' ? (isLargeFarmer ? 12 : 8) : 3;
 
     const result = await evaluateReport(
       currentSession.conversation,
       currentSession.reportType!,
       currentSession.followUpCount,
-      hasScreenshot
+      hasScreenshot,
+      currentSession.creditLimitType
     );
 
     currentSession.parsedReport = result.parsedReport;
@@ -288,8 +341,9 @@ export async function handleMessage(
       currentSession.parsedReport = null;
       currentSession.data = {};
       let startMsg = BUG_START_MSG;
-      if (currentSession.reportType === 'creditTopUp') startMsg = CREDIT_LIMIT_START_MSG;
-      else if (currentSession.reportType === 'admin') startMsg = ADMIN_START_MSG;
+      if (currentSession.reportType === 'creditTopUp') {
+        startMsg = currentSession.creditLimitType === 'largeFarmer' ? CREDIT_LIMIT_LARGE_START_MSG : CREDIT_LIMIT_START_MSG;
+      } else if (currentSession.reportType === 'admin') startMsg = ADMIN_START_MSG;
       await wati.sendMessage(phoneNumber, 'Mulai ulang.\n\n' + startMsg);
       return;
     }
@@ -405,37 +459,51 @@ function getWIBTimestamp(): string {
 function buildCreditLimitSummary(session: BotSession): string {
   const report = session.parsedReport || {};
   const mediaCount = session.mediaUrls.length;
-  const isLargeFarmer = report.isLargeFarmer || false;
+  const isLargeFarmer = session.creditLimitType === 'largeFarmer';
+  const creditType = report.creditType || '—';
+  const includesAgriInput = creditType.includes('Agri Input');
+  const includesMechanization = creditType.includes('Mechanization');
 
   let summary = `*Ringkasan Credit Limit Top Up:*\n\n`;
   summary += `*${report.title || '[Credit Limit] Top Up Request'}*\n\n`;
   summary += `*FG:* ${report.fgName || '—'}\n`;
   summary += `*Farmer:* ${report.farmerName || '—'}\n`;
   summary += `*Luas Lahan:* ${report.landParcelSize || '—'} Ha`;
-  if (isLargeFarmer) summary += ` ⚠️ LARGE FARMER`;
+  if (isLargeFarmer) summary += ` ⚠️ PETANI BESAR`;
   summary += `\n`;
   summary += `*Credit Limit Sekarang:* ${report.currentLimit || '—'}\n`;
   summary += `*Top Up:* ${report.requestedTopUp || '—'}\n`;
-  summary += `*Jenis Credit:* ${report.creditType || '—'}\n`;
+  summary += `*Jenis Credit:* ${creditType}\n`;
   summary += `*Alasan:* ${report.reason || '—'}\n`;
 
-  if (report.soNumber) {
+  if (includesAgriInput && report.soNumber) {
     summary += `*Nomor SO:* ${report.soNumber}\n`;
   }
 
-  if (report.validationFlags && report.validationFlags.length > 0) {
-    summary += `\n⚠️ *Flags:* ${report.validationFlags.join(', ')}\n`;
+  if (isLargeFarmer) {
+    summary += `\n*--- Petani Besar ---*\n`;
+    if (report.farmerIncomeSources) summary += `*Sumber Pendapatan:* ${report.farmerIncomeSources}\n`;
+    if (report.businessPotential) summary += `*Potensi Bisnis:* ${report.businessPotential}\n`;
+    if (report.collateralType) summary += `*Jenis Jaminan:* ${report.collateralType}\n`;
+    if (report.creditLimitRequestAmount) summary += `*Limit Kredit Diminta:* ${report.creditLimitRequestAmount}\n`;
   }
 
   summary += `\n*Dokumen:* ${mediaCount} file terlampir`;
 
   if (report.documentsReceived) {
     const docs = report.documentsReceived;
-    summary += `\n  - Signed document ${docs.signedDocument ? '✅' : '❌'}`;
-    summary += `\n  - Farmer holding document ${docs.farmerHoldingDocument ? '✅' : '❌'}`;
+    if (includesAgriInput) {
+      summary += `\n  - Signed SO ${docs.signedSO ? '✅' : '❌'}`;
+      summary += `\n  - Farmer holding SO ${docs.farmerHoldingSO ? '✅' : '❌'}`;
+    }
+    if (includesMechanization) {
+      summary += `\n  - Signed Request Letter ${docs.signedRequestLetter ? '✅' : '❌'}`;
+      summary += `\n  - Farmer holding Request Letter ${docs.farmerHoldingRequestLetter ? '✅' : '❌'}`;
+    }
     if (isLargeFarmer) {
       summary += `\n  - Bukti kepemilikan lahan ${docs.landOwnershipProof ? '✅' : '❌'}`;
-      summary += `\n  - Dokumen Jaminan ${docs.dokumenJaminan ? '✅' : '❌'}`;
+      summary += `\n  - Foto jaminan ${docs.collateralPhoto ? '✅' : '❌'}`;
+      summary += `\n  - Sertifikat jaminan ${docs.collateralCertificate ? '✅' : '❌'}`;
     }
   }
 
@@ -450,6 +518,10 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
   const phoneNumber = session.phoneNumber;
   const displayName = session.profile?.name || session.senderName;
   const report = session.parsedReport || {};
+  const isLargeFarmer = session.creditLimitType === 'largeFarmer';
+  const creditType = report.creditType || '';
+  const includesAgriInput = creditType.includes('Agri Input');
+  const includesMechanization = creditType.includes('Mechanization');
 
   try {
     await wati.sendMessage(phoneNumber, 'Sedang mengirim permintaan credit limit top up...');
@@ -458,7 +530,16 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
     const timestamp = getWIBTimestamp();
 
     const driveUrls: Record<string, string> = {};
-    const docLabels = ['docSignedSO', 'docFarmerHolding', 'docLandOwnership', 'docJaminan'];
+    const docLabels: string[] = [];
+    if (includesAgriInput) {
+      docLabels.push('docSignedSO', 'docFarmerHoldingSO');
+    }
+    if (includesMechanization) {
+      docLabels.push('docSignedRequestLetter', 'docFarmerHoldingRequestLetter');
+    }
+    if (isLargeFarmer) {
+      docLabels.push('docLandOwnership', 'docCollateralPhoto', 'docCollateralCertificate');
+    }
 
     for (let i = 0; i < session.mediaUrls.length && i < docLabels.length; i++) {
       const mediaUrl = session.mediaUrls[i];
@@ -475,14 +556,21 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
       }
     }
 
+    const docSignedSO = driveUrls.docSignedSO || driveUrls.docSignedRequestLetter || '';
+    const docFarmerHolding = driveUrls.docFarmerHoldingSO || driveUrls.docFarmerHoldingRequestLetter || '';
+
     const slackData = {
       ...report,
       requestId,
       timestamp,
+      creditLimitType: session.creditLimitType,
       docSignedSO: driveUrls.docSignedSO || '',
-      docFarmerHolding: driveUrls.docFarmerHolding || '',
+      docFarmerHoldingSO: driveUrls.docFarmerHoldingSO || '',
+      docSignedRequestLetter: driveUrls.docSignedRequestLetter || '',
+      docFarmerHoldingRequestLetter: driveUrls.docFarmerHoldingRequestLetter || '',
       docLandOwnership: driveUrls.docLandOwnership || '',
-      docJaminan: driveUrls.docJaminan || '',
+      docCollateralPhoto: driveUrls.docCollateralPhoto || '',
+      docCollateralCertificate: driveUrls.docCollateralCertificate || '',
     };
 
     const slackResult = await slack.postCreditLimitToSlack(session, slackData, (ts, channel) => {
@@ -508,10 +596,10 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
       creditType: report.creditType || '',
       reason: report.reason || '',
       soNumber: report.soNumber || '',
-      docSignedSO: driveUrls.docSignedSO || '',
-      docFarmerHolding: driveUrls.docFarmerHolding || '',
+      docSignedSO: docSignedSO,
+      docFarmerHolding: docFarmerHolding,
       docLandOwnership: driveUrls.docLandOwnership || '',
-      docJaminan: driveUrls.docJaminan || '',
+      docJaminan: driveUrls.docCollateralPhoto || '',
       status: 'PENDING',
       reviewedBy: '',
       reviewDate: '',

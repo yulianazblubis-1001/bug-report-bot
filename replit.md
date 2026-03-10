@@ -15,7 +15,7 @@ A WhatsApp chatbot that guides Rize.farm agronomists through bug reports, admin 
 |------|---------|
 | `server/routes.ts` | Express routes: webhook, slack-events, sheet-update, API endpoints |
 | `server/bot/session.ts` | In-memory session store with 30-min TTL, conversation history, Slack mapping |
-| `server/bot/router.ts` | Message routing + conversation flow (SELECT_TYPE → SELECT_ADMIN_TYPE → COLLECTING → CONFIRMING) |
+| `server/bot/router.ts` | Message routing + conversation flow (SELECT_TYPE → SELECT_ADMIN_TYPE → SELECT_CREDIT_TYPE → COLLECTING → CONFIRMING) |
 | `server/bot/activityLog.ts` | In-memory activity log for dashboard |
 | `server/bot/services/claude-agent.ts` | Claude Sonnet 4 agent — evaluates bug/admin/creditTopUp reports with distinct system prompts |
 | `server/bot/services/wati.ts` | WATI API wrapper (sendSessionMessage with query param) |
@@ -47,17 +47,19 @@ A WhatsApp chatbot that guides Rize.farm agronomists through bug reports, admin 
 - Posts to `SLACK_CHANNEL_ADMIN`
 
 ### 3. Credit Limit Top Up (AI-guided)
-- Uses Claude AI with specialized system prompt for data collection and validation
-- Up to 8 follow-up questions (more fields than bug/admin)
-- Always required: FG Name, Farmer Name, Land Parcel Size (0.1-5.0 Ha), Current Limit, Requested Top-Up, Credit Type, Reason
+- Sub-menu: Standard (< 2.5 Ha) or Petani Besar / Large Farmer (> 2.5 Ha s/d 5 Ha)
+- Uses Claude AI with specialized system prompt adapted per `creditLimitType`
+- Standard: up to 8 follow-ups | Large Farmer: up to 12 follow-ups
+- Always required: FG Name, Farmer Name, Land Parcel Size, Current Limit, Requested Top-Up, Credit Type (3 options: Agri Input / Mechanization / Both), Reason
 - Conditional (Agri Input): SO Number, Signed SO photo, Farmer holding SO photo
 - Conditional (Mechanization): Signed Request Letter photo, Farmer holding Request Letter photo
-- Conditional (Land > 2.5 Ha / Large Farmer): Proof of land ownership, Dokumen Jaminan
-- Claude validates: land size range, total credit cap, suspicious cross-checks, SO format, reason specificity
+- If Credit Type = Both: ALL documents from both types required
+- Large Farmer additional: Farmer Income Sources, Business Potential, Land Ownership Proof, Collateral Type, Collateral Photo, Collateral Certificate, Credit Limit Request Amount
+- Claude does NOT validate amounts — that's Ops Excellence's job
 - Documents uploaded to Google Drive → shareable URLs
-- Data written to Google Sheets (21 columns)
+- Data written to Google Sheets (21 columns, docs collapsed into M-P; full links in Slack card)
 - Posts to `SLACK_CHANNEL_CREDIT_LIMIT` with Ops Excellence mentions
-- Approval from Google Sheet (onEdit trigger) → POST /sheet-update
+- Approval from Google Sheet (onEdit trigger) → POST /sheet-update (with optional SHEET_WEBHOOK_SECRET)
 - Engineer resolution: ✅ reaction when processed → WhatsApp notification
 
 ## Slack Card Format
@@ -134,8 +136,9 @@ A WhatsApp chatbot that guides Rize.farm agronomists through bug reports, admin 
 2. Whitelist check — rejects unregistered numbers, auto-identifies from database
 3. User picks Bug Report (1) or Admin Request (2)
 4. If Admin Request → sub-menu: General (1) or Credit Limit Top Up (2)
-5. All types: Claude AI evaluates, enforces mandatory fields, asks follow-ups
-6. Credit Limit: Claude uses specialized prompt with validation rules, up to 8 follow-ups
+5. If Credit Limit → sub-menu: Standard (1) or Petani Besar/Large Farmer (2)
+6. All types: Claude AI evaluates, enforces mandatory fields, asks follow-ups
+7. Credit Limit: Claude uses specialized prompt per creditLimitType, 8 follow-ups (standard) or 12 (large farmer)
 7. When ready, shows summary for confirmation (KIRIM to submit, ULANG to restart)
 8. On submit: posts Slack card, uploads docs to Google Drive, writes Google Sheets
 9. Credit limit approval: Ops edits Sheet → Apps Script triggers /sheet-update → Slack reactions + WhatsApp
