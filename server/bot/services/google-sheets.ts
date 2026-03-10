@@ -1,14 +1,14 @@
 import { google } from 'googleapis';
 
-let connectionSettings: any;
+let connectionSettings: any = null;
 
 async function getAccessToken() {
-  if (connectionSettings && connectionSettings.settings.expires_at && new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
-    console.log('[Google Sheets] Using cached access token (expires:', connectionSettings.settings.expires_at, ')');
+  if (connectionSettings && connectionSettings.settings?.expires_at && new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
     return connectionSettings.settings.access_token;
   }
 
-  console.log('[Google Sheets] Fetching fresh access token from Replit connector...');
+  connectionSettings = null;
+
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? 'repl ' + process.env.REPL_IDENTITY
@@ -20,35 +20,24 @@ async function getAccessToken() {
     throw new Error('X-Replit-Token not found for repl/depl');
   }
 
-  const url = 'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=google-sheet';
-  console.log('[Google Sheets] Connector URL:', url);
+  connectionSettings = await fetch(
+    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=google-sheet',
+    {
+      headers: {
+        'Accept': 'application/json',
+        'X-Replit-Token': xReplitToken,
+      },
+    }
+  ).then(res => res.json()).then(data => data.items?.[0]);
 
-  const rawResponse = await fetch(url, {
-    headers: {
-      'Accept': 'application/json',
-      'X-Replit-Token': xReplitToken,
-    },
-  });
+  const accessToken = connectionSettings?.settings?.access_token || connectionSettings?.settings?.oauth?.credentials?.access_token;
 
-  const responseData = await rawResponse.json();
-  console.log('[Google Sheets] Connector response status:', rawResponse.status);
-  console.log('[Google Sheets] Connector items count:', responseData.items?.length || 0);
-
-  connectionSettings = responseData.items?.[0];
-
-  if (!connectionSettings || !connectionSettings.settings) {
-    console.error('[Google Sheets] No connection settings found. Full response:', JSON.stringify(responseData).substring(0, 500));
-    throw new Error('Google Sheet not connected — please check the integration in Replit settings');
+  if (!connectionSettings || !accessToken) {
+    console.error('[Google Sheets] Connection failed. Has settings:', !!connectionSettings?.settings);
+    throw new Error('Google Sheet not connected');
   }
 
-  const accessToken = connectionSettings.settings.access_token || connectionSettings.settings?.oauth?.credentials?.access_token;
-
-  if (!accessToken) {
-    console.error('[Google Sheets] No access token in settings. Keys:', Object.keys(connectionSettings.settings).join(', '));
-    throw new Error('Google Sheet access token not available — integration may need re-authorization');
-  }
-
-  console.log('[Google Sheets] Access token obtained successfully');
+  console.log('[Google Sheets] Access token obtained');
   return accessToken;
 }
 
