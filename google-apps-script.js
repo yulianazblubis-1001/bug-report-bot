@@ -15,8 +15,16 @@
  *    - Event type: On edit
  * 9. Save and authorize when prompted
  *
+ * COLUMN STRUCTURE (A-V, 22 columns):
+ * A: Timestamp, B: Request ID, C: Reporter Name, D: Reporter Phone,
+ * E: FG, F: Farmer, G: Land Size, H: Current Limit, I: Requested Top-Up,
+ * J: Credit Type, K: SO Number, L: Farmer Income & Business,
+ * M: Jaminan Info, N: Doc Signed SO/Letter, O: Doc Farmer Holding,
+ * P: Doc Land Ownership, Q: Doc Jaminan,
+ * R: Status, S: Reviewed By, T: Review Date, U: Rejection Reason, V: Slack TS
+ *
  * HOW IT WORKS:
- * When column Q (Status) is changed to "APPROVED" or "REJECTED",
+ * When column R (Status) is changed to "APPROVED" or "REJECTED",
  * this script sends a POST request to your bot's /sheet-update endpoint
  * with the row data so the bot can:
  * - Add emoji reactions on Slack (:git-approved: or :rejected:)
@@ -32,8 +40,8 @@ function onSheetEdit(e) {
     if (sheet.getName() !== 'Sheet1') return;
     
     var col = range.getColumn();
-    // Column Q = 17 (Status column)
-    if (col !== 17) return;
+    // Column R = 18 (Status column)
+    if (col !== 18) return;
     
     var newValue = (range.getValue() || '').toString().trim().toUpperCase();
     
@@ -42,17 +50,17 @@ function onSheetEdit(e) {
     var row = range.getRow();
     if (row <= 1) return; // Skip header row
     
-    var rowData = sheet.getRange(row, 1, 1, 21).getValues()[0];
+    var rowData = sheet.getRange(row, 1, 1, 22).getValues()[0];
     
     var payload = {
       requestId: rowData[1] || '',        // Column B
-      status: newValue,                     // Column Q
-      reviewedBy: rowData[17] || '',       // Column R
-      rejectionReason: rowData[19] || '',  // Column T
-      slackTs: rowData[20] || '',          // Column U
-      reporterPhone: rowData[3] || '',     // Column D
-      reporterName: rowData[2] || '',      // Column C
-      farmerName: rowData[5] || '',        // Column F
+      status: newValue,                    // Column R
+      reviewedBy: rowData[18] || '',      // Column S
+      rejectionReason: rowData[20] || '', // Column U
+      slackTs: rowData[21] || '',         // Column V
+      reporterPhone: rowData[3] || '',    // Column D
+      reporterName: rowData[2] || '',     // Column C
+      farmerName: rowData[5] || '',       // Column F
     };
     
     var botUrl = PropertiesService.getScriptProperties().getProperty('BOT_WEBHOOK_URL');

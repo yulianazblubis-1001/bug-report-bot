@@ -583,6 +583,22 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
       });
     });
 
+    let farmerIncomeAndBusiness = '';
+    if (isLargeFarmer) {
+      const parts: string[] = [];
+      if (report.farmerIncomeSources) parts.push(report.farmerIncomeSources);
+      if (report.businessPotential) parts.push(`Potensi Bisnis: ${report.businessPotential}`);
+      farmerIncomeAndBusiness = parts.join('; ');
+    }
+
+    let collateralInfo = '';
+    if (isLargeFarmer && report.collateralType) {
+      collateralInfo = report.collateralType;
+      if (report.creditLimitRequestAmount) {
+        collateralInfo += ` - ${report.creditLimitRequestAmount}`;
+      }
+    }
+
     const sheetRow: googleSheets.CreditLimitRow = {
       timestamp,
       requestId,
@@ -594,8 +610,9 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
       currentLimit: report.currentLimit || '',
       requestedTopUp: report.requestedTopUp || '',
       creditType: report.creditType || '',
-      reason: report.reason || '',
       soNumber: report.soNumber || '',
+      farmerIncomeAndBusiness,
+      collateralInfo,
       docSignedSO: docSignedSO,
       docFarmerHolding: docFarmerHolding,
       docLandOwnership: driveUrls.docLandOwnership || '',

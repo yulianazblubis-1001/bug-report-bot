@@ -77,8 +77,9 @@ export interface CreditLimitRow {
   currentLimit: string;
   requestedTopUp: string;
   creditType: string;
-  reason: string;
   soNumber: string;
+  farmerIncomeAndBusiness: string;
+  collateralInfo: string;
   docSignedSO: string;
   docFarmerHolding: string;
   docLandOwnership: string;
@@ -105,8 +106,9 @@ export async function appendRequest(data: CreditLimitRow): Promise<void> {
     data.currentLimit,
     data.requestedTopUp,
     data.creditType,
-    data.reason,
     data.soNumber,
+    data.farmerIncomeAndBusiness,
+    data.collateralInfo,
     data.docSignedSO,
     data.docFarmerHolding,
     data.docLandOwnership,
@@ -120,7 +122,7 @@ export async function appendRequest(data: CreditLimitRow): Promise<void> {
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: 'Sheet1!A:U',
+    range: 'Sheet1!A:V',
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: [row] },
   });
@@ -160,7 +162,7 @@ export async function updateStatus(
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `Sheet1!Q${rowIndex}:T${rowIndex}`,
+    range: `Sheet1!R${rowIndex}:U${rowIndex}`,
     valueInputOption: 'USER_ENTERED',
     requestBody: {
       values: [[status, reviewedBy, reviewDate, reason || '']],
@@ -176,12 +178,12 @@ export async function findBySlackTs(slackTs: string): Promise<{ rowIndex: number
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'Sheet1!A:U',
+    range: 'Sheet1!A:V',
   });
 
   const rows = res.data.values || [];
   for (let i = 0; i < rows.length; i++) {
-    if (rows[i][20] === slackTs) {
+    if (rows[i][21] === slackTs) {
       return {
         rowIndex: i + 1,
         data: rowToData(rows[i]),
@@ -198,7 +200,7 @@ export async function findByRequestId(requestId: string): Promise<{ rowIndex: nu
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'Sheet1!A:U',
+    range: 'Sheet1!A:V',
   });
 
   const rows = res.data.values || [];
@@ -226,16 +228,17 @@ function rowToData(row: string[]): CreditLimitRow {
     currentLimit: row[7] || '',
     requestedTopUp: row[8] || '',
     creditType: row[9] || '',
-    reason: row[10] || '',
-    soNumber: row[11] || '',
-    docSignedSO: row[12] || '',
-    docFarmerHolding: row[13] || '',
-    docLandOwnership: row[14] || '',
-    docJaminan: row[15] || '',
-    status: row[16] || '',
-    reviewedBy: row[17] || '',
-    reviewDate: row[18] || '',
-    rejectionReason: row[19] || '',
-    slackMessageTs: row[20] || '',
+    soNumber: row[10] || '',
+    farmerIncomeAndBusiness: row[11] || '',
+    collateralInfo: row[12] || '',
+    docSignedSO: row[13] || '',
+    docFarmerHolding: row[14] || '',
+    docLandOwnership: row[15] || '',
+    docJaminan: row[16] || '',
+    status: row[17] || '',
+    reviewedBy: row[18] || '',
+    reviewDate: row[19] || '',
+    rejectionReason: row[20] || '',
+    slackMessageTs: row[21] || '',
   };
 }
