@@ -67,28 +67,29 @@ function getWIBTimestamp(): string {
 }
 
 export interface CreditLimitRow {
-  timestamp: string;
-  requestId: string;
-  reporterName: string;
-  reporterPhone: string;
-  fgName: string;
-  farmerName: string;
-  landSizeVerified: string;
-  currentLimit: string;
-  requestedTopUp: string;
-  creditType: string;
-  soNumber: string;
-  farmerIncomeAndBusiness: string;
-  collateralInfo: string;
-  docSignedSO: string;
-  docFarmerHolding: string;
-  docLandOwnership: string;
-  docJaminan: string;
-  status: string;
-  reviewedBy: string;
-  reviewDate: string;
-  rejectionReason: string;
-  slackMessageTs: string;
+  timestamp: string;        // A
+  requestId: string;        // B
+  reporterName: string;     // C
+  reporterPhone: string;    // D
+  fgName: string;           // E
+  farmerName: string;       // F
+  landSizeVerified: string; // G
+  currentLimit: string;     // H
+  requestedTopUp: string;   // I
+  creditType: string;       // J
+  reason: string;           // K
+  soNumber: string;         // L
+  farmerIncomeAndBusiness: string; // M
+  collateralInfo: string;   // N
+  docSignedSO: string;      // O
+  docFarmerHolding: string;  // P
+  docLandOwnership: string;  // Q
+  docJaminan: string;        // R
+  status: string;            // S
+  reviewedBy: string;        // T
+  reviewDate: string;        // U
+  rejectionReason: string;   // V
+  slackMessageTs: string;    // W
 }
 
 export async function appendRequest(data: CreditLimitRow): Promise<void> {
@@ -96,33 +97,34 @@ export async function appendRequest(data: CreditLimitRow): Promise<void> {
   const spreadsheetId = getSheetId();
 
   const row = [
-    data.timestamp,
-    data.requestId,
-    data.reporterName,
-    data.reporterPhone,
-    data.fgName,
-    data.farmerName,
-    data.landSizeVerified,
-    data.currentLimit,
-    data.requestedTopUp,
-    data.creditType,
-    data.soNumber,
-    data.farmerIncomeAndBusiness,
-    data.collateralInfo,
-    data.docSignedSO,
-    data.docFarmerHolding,
-    data.docLandOwnership,
-    data.docJaminan,
-    data.status,
-    data.reviewedBy,
-    data.reviewDate,
-    data.rejectionReason,
-    data.slackMessageTs,
+    data.timestamp,           // A
+    data.requestId,           // B
+    data.reporterName,        // C
+    data.reporterPhone,       // D
+    data.fgName,              // E
+    data.farmerName,          // F
+    data.landSizeVerified,    // G
+    data.currentLimit,        // H
+    data.requestedTopUp,      // I
+    data.creditType,          // J
+    data.reason,              // K
+    data.soNumber,            // L
+    data.farmerIncomeAndBusiness, // M
+    data.collateralInfo,      // N
+    data.docSignedSO,         // O
+    data.docFarmerHolding,    // P
+    data.docLandOwnership,    // Q
+    data.docJaminan,          // R
+    data.status,              // S
+    data.reviewedBy,          // T
+    data.reviewDate,          // U
+    data.rejectionReason,     // V
+    data.slackMessageTs,      // W
   ];
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: 'Sheet1!A:V',
+    range: 'Sheet1!A:W',
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: [row] },
   });
@@ -162,7 +164,7 @@ export async function updateStatus(
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `Sheet1!R${rowIndex}:U${rowIndex}`,
+    range: `Sheet1!S${rowIndex}:V${rowIndex}`,
     valueInputOption: 'USER_ENTERED',
     requestBody: {
       values: [[status, reviewedBy, reviewDate, reason || '']],
@@ -178,12 +180,12 @@ export async function findBySlackTs(slackTs: string): Promise<{ rowIndex: number
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'Sheet1!A:V',
+    range: 'Sheet1!A:W',
   });
 
   const rows = res.data.values || [];
   for (let i = 0; i < rows.length; i++) {
-    if (rows[i][21] === slackTs) {
+    if (rows[i][22] === slackTs) {
       return {
         rowIndex: i + 1,
         data: rowToData(rows[i]),
@@ -200,7 +202,7 @@ export async function findByRequestId(requestId: string): Promise<{ rowIndex: nu
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'Sheet1!A:V',
+    range: 'Sheet1!A:W',
   });
 
   const rows = res.data.values || [];
@@ -218,27 +220,28 @@ export async function findByRequestId(requestId: string): Promise<{ rowIndex: nu
 
 function rowToData(row: string[]): CreditLimitRow {
   return {
-    timestamp: row[0] || '',
-    requestId: row[1] || '',
-    reporterName: row[2] || '',
-    reporterPhone: row[3] || '',
-    fgName: row[4] || '',
-    farmerName: row[5] || '',
-    landSizeVerified: row[6] || '',
-    currentLimit: row[7] || '',
-    requestedTopUp: row[8] || '',
-    creditType: row[9] || '',
-    soNumber: row[10] || '',
-    farmerIncomeAndBusiness: row[11] || '',
-    collateralInfo: row[12] || '',
-    docSignedSO: row[13] || '',
-    docFarmerHolding: row[14] || '',
-    docLandOwnership: row[15] || '',
-    docJaminan: row[16] || '',
-    status: row[17] || '',
-    reviewedBy: row[18] || '',
-    reviewDate: row[19] || '',
-    rejectionReason: row[20] || '',
-    slackMessageTs: row[21] || '',
+    timestamp: row[0] || '',          // A
+    requestId: row[1] || '',          // B
+    reporterName: row[2] || '',       // C
+    reporterPhone: row[3] || '',      // D
+    fgName: row[4] || '',             // E
+    farmerName: row[5] || '',         // F
+    landSizeVerified: row[6] || '',   // G
+    currentLimit: row[7] || '',       // H
+    requestedTopUp: row[8] || '',     // I
+    creditType: row[9] || '',         // J
+    reason: row[10] || '',            // K
+    soNumber: row[11] || '',          // L
+    farmerIncomeAndBusiness: row[12] || '', // M
+    collateralInfo: row[13] || '',    // N
+    docSignedSO: row[14] || '',       // O
+    docFarmerHolding: row[15] || '',  // P
+    docLandOwnership: row[16] || '',  // Q
+    docJaminan: row[17] || '',        // R
+    status: row[18] || '',            // S
+    reviewedBy: row[19] || '',        // T
+    reviewDate: row[20] || '',        // U
+    rejectionReason: row[21] || '',   // V
+    slackMessageTs: row[22] || '',    // W
   };
 }

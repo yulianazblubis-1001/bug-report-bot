@@ -67,7 +67,7 @@ A WhatsApp chatbot that guides Rize.farm agronomists through bug reports, admin 
 - Credit Limit: `🏦 CREDIT LIMIT TOP UP REQUEST` with structured fields, doc links, validation flags
 - Categories: App Bug, Farmer Data, Payment, Field Task, Account, Carbon/AWD, UI/UX, Admin Request, Other
 
-## Google Sheets Column Structure (Credit Limit — 22 columns A-V)
+## Google Sheets Column Structure (Credit Limit — 23 columns A-W)
 | Col | Header | Source |
 |-----|--------|--------|
 | A | Timestamp | Auto (WIB) |
@@ -80,18 +80,19 @@ A WhatsApp chatbot that guides Rize.farm agronomists through bug reports, admin 
 | H | Current Limit | Claude parsedReport |
 | I | Requested Top-Up | Claude parsedReport |
 | J | Credit Type | Claude parsedReport |
-| K | SO Number | Claude parsedReport (Agri Input only) |
-| L | Farmer Source of Income & Potential Business | Combined `;`-separated (Large Farmer only) |
-| M | Jenis Jaminan - nilai jaminan | Combined `;`-separated (Large Farmer only) |
-| N | Doc: Signed SO/Request Letter | Google Drive URL |
-| O | Doc: Farmer Holding Document | Google Drive URL |
-| P | Doc: Land Ownership Proof | Google Drive URL (Large Farmer only) |
-| Q | Doc: Dokumen Jaminan | Google Drive URL (Large Farmer only) |
-| R | Status | PENDING → APPROVED/REJECTED → RESOLVED |
-| S | Reviewed By | Google Sheet (Ops fills) |
-| T | Review Date | Auto |
-| U | Rejection Reason | Google Sheet (Ops fills) |
-| V | Slack Message TS | System |
+| K | Reason | Claude parsedReport |
+| L | SO Number | Claude parsedReport (Agri Input only) |
+| M | Farmer Source of Income & Potential Business | Combined `;`-separated (Large Farmer only) |
+| N | Jenis Jaminan - nilai jaminan | Combined `;`-separated (Large Farmer only) |
+| O | Doc: Signed SO/Request Letter | Google Drive URL |
+| P | Doc: Farmer Holding Document | Google Drive URL |
+| Q | Doc: Land Ownership Proof | Google Drive URL (Large Farmer only) |
+| R | Doc: Dokumen Jaminan | Google Drive URL (Large Farmer only) |
+| S | Status | PENDING → APPROVED/REJECTED → RESOLVED |
+| T | Reviewed By | Google Sheet (Ops fills) |
+| U | Review Date | Auto |
+| V | Rejection Reason | Google Sheet (Ops fills) |
+| W | Slack Message TS | System |
 
 ## Credit Limit Approval Workflow
 1. Agronomist submits via WhatsApp → data written to Google Sheets as PENDING

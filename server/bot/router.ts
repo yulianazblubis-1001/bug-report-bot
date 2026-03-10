@@ -610,6 +610,7 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
       currentLimit: report.currentLimit || '',
       requestedTopUp: report.requestedTopUp || '',
       creditType: report.creditType || '',
+      reason: report.reason || '',
       soNumber: report.soNumber || '',
       farmerIncomeAndBusiness,
       collateralInfo,
