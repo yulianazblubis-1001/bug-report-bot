@@ -245,6 +245,17 @@ export async function handleMessage(
       return;
     }
 
+    if (currentSession.reportType === 'creditTopUp' && result.parsedReport) {
+      const r = result.parsedReport;
+      const coreFields = [r.fgName, r.farmerName, r.landParcelSize, r.currentLimit, r.requestedTopUp];
+      const allNull = coreFields.every((f: any) => !f || f === 'null');
+      if (allNull) {
+        const incompleteMsg = '⚠️ Data belum lengkap. Silakan ketik *ULANG* dan kirim data yang lengkap.\n\n_(Data is incomplete. Type ULANG to restart and provide complete data.)_';
+        await wati.sendMessage(phoneNumber, incompleteMsg);
+        return;
+      }
+    }
+
     currentSession.step = 'CONFIRMING';
     const summary = currentSession.reportType === 'creditTopUp'
       ? buildCreditLimitSummary(currentSession)

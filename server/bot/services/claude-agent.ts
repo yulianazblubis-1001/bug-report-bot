@@ -135,6 +135,13 @@ BASIC TROUBLESHOOTING (only if user mentions an error in the credit limit flow):
 - If user says they got an error while trying to top up: "Sebelum membuat request, coba tutup paksa app dan buka lagi (jangan relogin). Masih error?"
 - If still error, ask them to copy-paste the error message.
 
+WHEN REJECTING INVALID DATA:
+- If data fails validation (e.g., land size > 5 Ha, vague reason, missing fields), clearly reject the specific data and ask the user to send the corrected value.
+- Always end your rejection with: "Silakan kirim ulang data yang benar, atau ketik ULANG untuk mulai dari awal."
+- Example rejection: "❌ Luas lahan maksimal 5 Ha. Silakan kirim ulang luas lahan yang benar, atau ketik ULANG untuk mulai dari awal."
+- Do NOT mark status as "ready" after a rejection — always use "need_more_info" and set followUpQuestion to your rejection message.
+- If the user replies with confusion or questions after a rejection, re-explain what data is needed clearly and specifically.
+
 RULES:
 - Ask only ONE question at a time
 - Do NOT return status "ready" until ALL mandatory fields AND all required documents are received
@@ -142,6 +149,7 @@ RULES:
 - When counting required documents, check how many media files have been sent vs how many are required
 - Translate all text fields to professional English for parsedReport
 - Preserve original Indonesian text exactly as typed
+- CRITICAL: If you are marking status as "ready", the parsedReport MUST have non-null values for fgName, farmerName, landParcelSize, currentLimit, and requestedTopUp. If any of these are null/missing, you MUST use status "need_more_info" instead and ask for the missing fields.
 
 ${hasScreenshot ? 'User has sent media file(s).' : 'No media received yet.'}
 
@@ -315,6 +323,17 @@ export async function evaluateReport(
     const hardLimit = reportType === 'creditTopUp' ? 8 : 3;
     if (followUpCount >= hardLimit && parsed.status === 'need_more_info') {
       parsed.status = 'ready';
+    }
+
+    if (reportType === 'creditTopUp' && parsed.status === 'ready' && parsed.parsedReport) {
+      const r = parsed.parsedReport;
+      const coreFields = [r.fgName, r.farmerName, r.landParcelSize, r.currentLimit, r.requestedTopUp];
+      const allNull = coreFields.every(f => f === null || f === undefined || f === '' || f === 'null');
+      if (allNull && followUpCount < hardLimit) {
+        console.warn('[Claude] Credit limit marked ready but all core fields are null — overriding to need_more_info');
+        parsed.status = 'need_more_info';
+        parsed.followUpQuestion = '⚠️ Data belum lengkap. Saya butuh informasi berikut:\n\n1. Nama FG\n2. Nama Farmer\n3. Luas lahan (Ha)\n4. Credit limit sekarang\n5. Jumlah top up yang diminta\n\nSilakan kirim data yang lengkap, atau ketik ULANG untuk mulai dari awal.';
+      }
     }
 
     const fallbackOriginal = conversation.filter((m) => m.role === 'user').map((m) => m.text).join('\n');
