@@ -48,17 +48,20 @@ function onSheetEdit(e) {
     if (row <= 1) return; // Skip header row
     
     var rowData = sheet.getRange(row, 1, 1, 23).getValues()[0];
+    var slackTsCell = sheet.getRange(row, 23).getDisplayValue();
     
     var payload = {
-      requestId: rowData[1] || '',        // Column B
-      status: newValue,                    // Column S
-      reviewedBy: rowData[19] || '',      // Column T
-      rejectionReason: rowData[21] || '', // Column V
-      slackTs: rowData[22] || '',         // Column W
-      reporterPhone: rowData[3] || '',    // Column D
-      reporterName: rowData[2] || '',     // Column C
-      farmerName: rowData[5] || '',       // Column F
+      requestId: (rowData[1] || '').toString(),  // Column B
+      status: newValue,                           // Column S
+      reviewedBy: (rowData[19] || '').toString(), // Column T
+      rejectionReason: (rowData[21] || '').toString(), // Column V
+      slackTs: slackTsCell || '',                 // Column W — use getDisplayValue to preserve precision
+      reporterPhone: (rowData[3] || '').toString(),    // Column D
+      reporterName: (rowData[2] || '').toString(),     // Column C
+      farmerName: (rowData[5] || '').toString(),       // Column F
     };
+    
+    Logger.log('Payload: ' + JSON.stringify(payload));
     
     var botUrl = PropertiesService.getScriptProperties().getProperty('BOT_WEBHOOK_URL');
     if (!botUrl) {

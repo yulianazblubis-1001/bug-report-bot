@@ -507,13 +507,21 @@ export async function postSlackThreadReply(
   const botToken = process.env.SLACK_BOT_TOKEN;
   if (!botToken) return;
 
-  await axios.post('https://slack.com/api/chat.postMessage', {
+  console.log(`[Slack] Posting thread reply to channel=${channelId}, thread_ts="${threadTs}" (type=${typeof threadTs})`);
+
+  const res = await axios.post('https://slack.com/api/chat.postMessage', {
     channel: channelId,
-    thread_ts: threadTs,
+    thread_ts: String(threadTs),
     text: text,
   }, {
     headers: { Authorization: `Bearer ${botToken}` },
   });
+
+  if (!res.data.ok) {
+    console.error(`[Slack] Thread reply failed: ${res.data.error}`);
+  } else {
+    console.log(`[Slack] Thread reply posted successfully (ts: ${res.data.ts})`);
+  }
 }
 
 export async function addSlackReaction(

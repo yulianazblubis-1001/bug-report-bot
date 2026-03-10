@@ -128,7 +128,7 @@ export async function appendRequest(data: CreditLimitRow): Promise<void> {
   await sheets.spreadsheets.values.append({
     spreadsheetId,
     range: 'request!A:W',
-    valueInputOption: 'USER_ENTERED',
+    valueInputOption: 'RAW',
     requestBody: { values: [row] },
   });
 

@@ -216,9 +216,10 @@ export async function registerRoutes(
       }
 
       const body = req.body;
-      const { requestId, status, reviewedBy, rejectionReason, slackTs, reporterPhone, reporterName, farmerName } = body;
+      const { requestId, status, reviewedBy, rejectionReason, reporterPhone, reporterName, farmerName } = body;
+      const slackTs = body.slackTs ? String(body.slackTs) : '';
 
-      console.log(`[Sheet Update] Received: requestId=${requestId}, status=${status}, reviewedBy=${reviewedBy}`);
+      console.log(`[Sheet Update] Received: requestId=${requestId}, status=${status}, reviewedBy=${reviewedBy}, slackTs=${slackTs || '(empty)'}, channel=${process.env.SLACK_CHANNEL_CREDIT_LIMIT || process.env.SLACK_CHANNEL_ADMIN || '(none)'}, reporterPhone=${reporterPhone || '(empty)'}`);
 
       if (!requestId || !status) {
         return res.status(400).json({ error: "Missing requestId or status" });
