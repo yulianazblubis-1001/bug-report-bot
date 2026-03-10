@@ -7,7 +7,7 @@ import { sendMessage } from "./bot/services/wati";
 import { getReportLogs, getStats } from "./bot/activityLog";
 import { isWhitelisted, getWhitelistCount } from "./bot/whitelist";
 import * as googleSheets from "./bot/services/google-sheets";
-import { postSlackThreadReply, getSlackUserName } from "./bot/services/slack";
+import { postSlackThreadReply, getSlackUserName, addSlackReaction } from "./bot/services/slack";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -193,71 +193,6 @@ export async function registerRoutes(
         }
       }
 
-      if (body.event?.type === "message" && body.event.thread_ts && !body.event.bot_id) {
-        const threadTs = body.event.thread_ts;
-        const channelId = body.event.channel;
-        const messageText = (body.event.text || '').trim();
-        const userId = body.event.user;
-
-        console.log(`[Slack Events] Thread reply in ${channelId}: "${messageText.substring(0, 80)}" by ${userId}`);
-
-        const creditLimitChannel = process.env.SLACK_CHANNEL_CREDIT_LIMIT || process.env.SLACK_CHANNEL_ADMIN;
-        if (channelId !== creditLimitChannel) return;
-
-        const mapping = sessionStore.getSlackMapping(threadTs, channelId);
-        if (!mapping || mapping.reportType !== 'creditTopUp') {
-          console.log(`[Slack Events] No credit limit mapping for thread ${threadTs}`);
-          return;
-        }
-
-        const upperMsg = messageText.toUpperCase();
-        const userName = await getSlackUserName(userId);
-
-        if (upperMsg === 'APPROVED' || upperMsg.startsWith('APPROVED')) {
-          console.log(`[Slack Events] Credit limit APPROVED by ${userName} for ${mapping.requestId}`);
-
-          try {
-            if (mapping.requestId) {
-              await googleSheets.updateStatus(mapping.requestId, 'APPROVED', userName, '');
-            }
-            await postSlackThreadReply(
-              channelId,
-              threadTs,
-              `✅ Request approved by ${userName}. Engineers — please process this credit limit top-up. React with ✅ when done.`
-            );
-            console.log(`[Slack Events] Approval posted for ${mapping.requestId}`);
-          } catch (err: any) {
-            console.error('[Slack Events] Error processing approval:', err.message);
-          }
-        }
-
-        if (upperMsg.startsWith('REJECTED') || upperMsg.startsWith('REJECT')) {
-          const reason = messageText.replace(/^REJECTED?\s*/i, '').trim() || 'No reason provided';
-
-          console.log(`[Slack Events] Credit limit REJECTED by ${userName} for ${mapping.requestId}: ${reason}`);
-
-          try {
-            if (mapping.requestId) {
-              await googleSheets.updateStatus(mapping.requestId, 'REJECTED', userName, reason);
-            }
-
-            await sendMessage(
-              mapping.phoneNumber,
-              `❌ Halo ${mapping.senderName}, permintaan credit limit top up untuk ${mapping.farmerName || 'farmer'} ditolak.\n\nAlasan: ${reason}\n\nKamu bisa submit ulang dengan ketik *START*.\n\n_(Your credit limit top-up request for ${mapping.farmerName || 'farmer'} was rejected. Reason: ${reason}. Type START to resubmit.)_`
-            );
-
-            await postSlackThreadReply(
-              channelId,
-              threadTs,
-              `❌ Request rejected by ${userName}. Reason: ${reason}\nWhatsApp notification sent to ${mapping.senderName}.`
-            );
-
-            console.log(`[Slack Events] Rejection processed for ${mapping.requestId}`);
-          } catch (err: any) {
-            console.error('[Slack Events] Error processing rejection:', err.message);
-          }
-        }
-      }
     } catch (err: any) {
       console.error("[Slack Events] Error:", err);
       if (!res.headersSent) {
@@ -268,6 +203,74 @@ export async function registerRoutes(
 
   app.post("/slack-events", slackEventsHandler);
   app.post("/api/bot/slack-events", slackEventsHandler);
+
+  async function sheetUpdateHandler(req: any, res: any) {
+    try {
+      const sheetSecret = process.env.SHEET_WEBHOOK_SECRET;
+      if (sheetSecret) {
+        const authHeader = req.headers['x-webhook-secret'] || req.query?.secret;
+        if (authHeader !== sheetSecret) {
+          console.warn('[Sheet Update] Unauthorized request — invalid secret');
+          return res.status(401).json({ error: "Unauthorized" });
+        }
+      }
+
+      const body = req.body;
+      const { requestId, status, reviewedBy, rejectionReason, slackTs, reporterPhone, reporterName, farmerName } = body;
+
+      console.log(`[Sheet Update] Received: requestId=${requestId}, status=${status}, reviewedBy=${reviewedBy}`);
+
+      if (!requestId || !status) {
+        return res.status(400).json({ error: "Missing requestId or status" });
+      }
+
+      res.status(200).json({ status: "received" });
+
+      const creditLimitChannel = process.env.SLACK_CHANNEL_CREDIT_LIMIT || process.env.SLACK_CHANNEL_ADMIN;
+
+      if (status === 'APPROVED') {
+        if (slackTs && creditLimitChannel) {
+          await addSlackReaction(creditLimitChannel, slackTs, 'git-approved');
+          await postSlackThreadReply(
+            creditLimitChannel,
+            slackTs,
+            `✅ Approved by ${reviewedBy || 'Ops'}. Engineers — please process this credit limit top-up. React with ✅ when done.`
+          );
+        }
+        console.log(`[Sheet Update] APPROVED ${requestId} by ${reviewedBy}`);
+      }
+
+      if (status === 'REJECTED') {
+        const reason = rejectionReason || 'No reason provided';
+
+        if (slackTs && creditLimitChannel) {
+          await addSlackReaction(creditLimitChannel, slackTs, 'rejected');
+          await postSlackThreadReply(
+            creditLimitChannel,
+            slackTs,
+            `❌ Rejected by ${reviewedBy || 'Ops'}. Reason: ${reason}\nWhatsApp notification sent to ${reporterName || 'reporter'}.`
+          );
+        }
+
+        if (reporterPhone) {
+          await sendMessage(
+            reporterPhone,
+            `❌ Halo ${reporterName || ''}, permintaan credit limit top up untuk ${farmerName || 'farmer'} ditolak.\n\nAlasan: ${reason}\n\nKamu bisa submit ulang dengan ketik *START*.\n\n_(Your credit limit top-up request for ${farmerName || 'farmer'} was rejected. Reason: ${reason}. Type START to resubmit.)_`
+          );
+        }
+
+        console.log(`[Sheet Update] REJECTED ${requestId} by ${reviewedBy}: ${reason}`);
+      }
+    } catch (err: any) {
+      console.error("[Sheet Update] Error:", err.message);
+      if (!res.headersSent) {
+        res.status(200).json({ status: "error", message: err.message });
+      }
+    }
+  }
+
+  app.post("/sheet-update", sheetUpdateHandler);
+  app.post("/api/bot/sheet-update", sheetUpdateHandler);
 
   return httpServer;
 }

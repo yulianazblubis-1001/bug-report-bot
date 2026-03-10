@@ -5,7 +5,6 @@ import * as slack from './services/slack';
 import { evaluateReport } from './services/claude-agent';
 import { addReportLog } from './activityLog';
 import { isWhitelisted, lookupProfile, REJECTED_MSG } from './whitelist';
-import * as creditLimitFlow from './flows/creditLimitTopUp';
 import * as googleSheets from './services/google-sheets';
 import * as googleDrive from './services/google-drive';
 import { v4 as uuidv4 } from 'uuid';
@@ -55,6 +54,20 @@ _(Describe the issue. Required: PG name, steps to reproduce, app version, platfo
 const ADMIN_START_MSG = `Jelaskan apa yang kamu butuhkan. Tulis dengan bahasa kamu sendiri.
 
 _(Describe what you need in your own words.)_`;
+
+const CREDIT_LIMIT_START_MSG = `🏦 *Credit Limit Top Up*
+
+Jelaskan permintaan credit limit top up kamu. Saya akan memandu kamu mengumpulkan semua informasi yang dibutuhkan.
+
+Yang wajib dilengkapi:
+- Nama FG dan Farmer
+- Luas lahan (Ha)
+- Credit limit sekarang dan jumlah top up
+- Jenis credit (Agri Input / Mechanization)
+- Alasan detail
+- Dokumen pendukung (foto)
+
+_(Describe your credit limit top-up request. I'll guide you through all required information.)_`;
 
 const CONFIRM_ONLY_MSG = `Di langkah ini, saya hanya mengerti:
 
@@ -158,10 +171,12 @@ export async function handleMessage(
     if (cleanText === '2') {
       currentSession.reportType = 'creditTopUp';
       currentSession.step = 'COLLECTING';
-      currentSession.data = { _stepIndex: 0 };
+      currentSession.conversation = [];
       currentSession.mediaUrls = [];
-      const firstQ = creditLimitFlow.getFirstQuestion();
-      await wati.sendMessage(phoneNumber, `🏦 *Credit Limit Top Up*\n\nSaya akan memandu kamu step-by-step.\n\n${firstQ}`);
+      currentSession.followUpCount = 0;
+      currentSession.parsedReport = null;
+      currentSession.data = {};
+      await wati.sendMessage(phoneNumber, CREDIT_LIMIT_START_MSG);
       return;
     }
     await wati.sendMessage(phoneNumber, `Balas *1* untuk General Request atau *2* untuk Credit Limit Top Up.\n\n_(Reply 1 or 2.)_`);
@@ -169,10 +184,6 @@ export async function handleMessage(
   }
 
   if (currentSession.step === 'COLLECTING') {
-    if (currentSession.reportType === 'creditTopUp') {
-      return handleCreditLimitCollecting(currentSession, phoneNumber, cleanText, messageType, mediaUrl);
-    }
-
     const msgHasMedia = messageType === 'image' || messageType === 'video' || messageType === 'document';
     const messageMediaUrls: string[] = [];
 
@@ -189,10 +200,13 @@ export async function handleMessage(
       });
 
       if (currentSession.conversation.length === 1) {
-        await wati.sendMessage(phoneNumber, 'Terima kasih! Bisa jelaskan apa yang terjadi?');
+        const promptMsg = currentSession.reportType === 'creditTopUp'
+          ? 'Terima kasih untuk dokumennya. Sekarang jelaskan permintaan credit limit top up kamu.'
+          : 'Terima kasih! Bisa jelaskan apa yang terjadi?';
+        await wati.sendMessage(phoneNumber, promptMsg);
         currentSession.conversation.push({
           role: 'assistant',
-          text: 'Terima kasih! Bisa jelaskan apa yang terjadi?',
+          text: promptMsg,
         });
         return;
       }
@@ -204,9 +218,13 @@ export async function handleMessage(
       });
     }
 
-    await wati.sendMessage(phoneNumber, 'Sedang menganalisis laporan kamu...');
+    const analyzingMsg = currentSession.reportType === 'creditTopUp'
+      ? 'Sedang memproses data kamu...'
+      : 'Sedang menganalisis laporan kamu...';
+    await wati.sendMessage(phoneNumber, analyzingMsg);
 
     const hasScreenshot = currentSession.mediaUrls.length > 0;
+    const maxFollowUps = currentSession.reportType === 'creditTopUp' ? 8 : 3;
 
     const result = await evaluateReport(
       currentSession.conversation,
@@ -217,7 +235,7 @@ export async function handleMessage(
 
     currentSession.parsedReport = result.parsedReport;
 
-    if (result.status === 'need_more_info' && result.followUpQuestion && currentSession.followUpCount < 3) {
+    if (result.status === 'need_more_info' && result.followUpQuestion && currentSession.followUpCount < maxFollowUps) {
       currentSession.followUpCount++;
       currentSession.conversation.push({
         role: 'assistant',
@@ -228,7 +246,9 @@ export async function handleMessage(
     }
 
     currentSession.step = 'CONFIRMING';
-    const summary = buildSummary(currentSession);
+    const summary = currentSession.reportType === 'creditTopUp'
+      ? buildCreditLimitSummary(currentSession)
+      : buildSummary(currentSession);
     await wati.sendMessage(phoneNumber, summary);
     return;
   }
@@ -250,53 +270,20 @@ export async function handleMessage(
     }
 
     if (upperText === 'ULANG' || upperText === 'RESTART' || upperText === 'EDIT') {
-      if (currentSession.reportType === 'creditTopUp') {
-        currentSession.step = 'COLLECTING';
-        currentSession.data = { _stepIndex: 0 };
-        currentSession.mediaUrls = [];
-        const firstQ = creditLimitFlow.getFirstQuestion();
-        await wati.sendMessage(phoneNumber, `Mulai ulang.\n\n${firstQ}`);
-      } else {
-        currentSession.step = 'COLLECTING';
-        currentSession.conversation = [];
-        currentSession.mediaUrls = [];
-        currentSession.followUpCount = 0;
-        currentSession.parsedReport = null;
-        const startMsg = currentSession.reportType === 'bug' ? BUG_START_MSG : ADMIN_START_MSG;
-        await wati.sendMessage(phoneNumber, 'Mulai ulang.\n\n' + startMsg);
-      }
+      currentSession.step = 'COLLECTING';
+      currentSession.conversation = [];
+      currentSession.mediaUrls = [];
+      currentSession.followUpCount = 0;
+      currentSession.parsedReport = null;
+      currentSession.data = {};
+      let startMsg = BUG_START_MSG;
+      if (currentSession.reportType === 'creditTopUp') startMsg = CREDIT_LIMIT_START_MSG;
+      else if (currentSession.reportType === 'admin') startMsg = ADMIN_START_MSG;
+      await wati.sendMessage(phoneNumber, 'Mulai ulang.\n\n' + startMsg);
       return;
     }
 
     await wati.sendMessage(phoneNumber, CONFIRM_ONLY_MSG);
-    return;
-  }
-}
-
-async function handleCreditLimitCollecting(
-  session: BotSession,
-  phoneNumber: string,
-  text: string,
-  messageType: string,
-  mediaUrl: string | null
-): Promise<void> {
-  const msgHasMedia = messageType === 'image' || messageType === 'video' || messageType === 'document';
-
-  const result = creditLimitFlow.processStep(session, text, msgHasMedia ? mediaUrl : null);
-
-  if (result.error) {
-    await wati.sendMessage(phoneNumber, result.error);
-    return;
-  }
-
-  if (result.showSummary && result.summary) {
-    session.step = 'CONFIRMING';
-    await wati.sendMessage(phoneNumber, result.summary);
-    return;
-  }
-
-  if (result.nextQuestion) {
-    await wati.sendMessage(phoneNumber, result.nextQuestion);
     return;
   }
 }
@@ -404,10 +391,54 @@ function getWIBTimestamp(): string {
   }) + ' WIB';
 }
 
+function buildCreditLimitSummary(session: BotSession): string {
+  const report = session.parsedReport || {};
+  const mediaCount = session.mediaUrls.length;
+  const isLargeFarmer = report.isLargeFarmer || false;
+
+  let summary = `*Ringkasan Credit Limit Top Up:*\n\n`;
+  summary += `*${report.title || '[Credit Limit] Top Up Request'}*\n\n`;
+  summary += `*FG:* ${report.fgName || '—'}\n`;
+  summary += `*Farmer:* ${report.farmerName || '—'}\n`;
+  summary += `*Luas Lahan:* ${report.landParcelSize || '—'} Ha`;
+  if (isLargeFarmer) summary += ` ⚠️ LARGE FARMER`;
+  summary += `\n`;
+  summary += `*Credit Limit Sekarang:* ${report.currentLimit || '—'}\n`;
+  summary += `*Top Up:* ${report.requestedTopUp || '—'}\n`;
+  summary += `*Jenis Credit:* ${report.creditType || '—'}\n`;
+  summary += `*Alasan:* ${report.reason || '—'}\n`;
+
+  if (report.soNumber) {
+    summary += `*Nomor SO:* ${report.soNumber}\n`;
+  }
+
+  if (report.validationFlags && report.validationFlags.length > 0) {
+    summary += `\n⚠️ *Flags:* ${report.validationFlags.join(', ')}\n`;
+  }
+
+  summary += `\n*Dokumen:* ${mediaCount} file terlampir`;
+
+  if (report.documentsReceived) {
+    const docs = report.documentsReceived;
+    summary += `\n  - Signed document ${docs.signedDocument ? '✅' : '❌'}`;
+    summary += `\n  - Farmer holding document ${docs.farmerHoldingDocument ? '✅' : '❌'}`;
+    if (isLargeFarmer) {
+      summary += `\n  - Bukti kepemilikan lahan ${docs.landOwnershipProof ? '✅' : '❌'}`;
+      summary += `\n  - Dokumen Jaminan ${docs.dokumenJaminan ? '✅' : '❌'}`;
+    }
+  }
+
+  summary += `\n\nKetik *KIRIM* untuk mengirim permintaan.`;
+  summary += `\nKetik *ULANG* untuk mulai dari awal.`;
+  summary += `\n\n_(Type KIRIM to submit, or ULANG to restart.)_`;
+
+  return summary;
+}
+
 async function submitCreditLimitReport(session: BotSession): Promise<void> {
   const phoneNumber = session.phoneNumber;
   const displayName = session.profile?.name || session.senderName;
-  const d = session.data;
+  const report = session.parsedReport || {};
 
   try {
     await wati.sendMessage(phoneNumber, 'Sedang mengirim permintaan credit limit top up...');
@@ -415,32 +446,32 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
     const requestId = uuidv4().substring(0, 8).toUpperCase();
     const timestamp = getWIBTimestamp();
 
-    const docFields = ['docSignedSO', 'docFarmerHolding', 'docLandOwnership', 'docJaminan'];
     const driveUrls: Record<string, string> = {};
+    const docLabels = ['docSignedSO', 'docFarmerHolding', 'docLandOwnership', 'docJaminan'];
 
-    for (const field of docFields) {
-      if (d[field] && typeof d[field] === 'string' && d[field].startsWith('http')) {
-        try {
-          console.log(`[CreditLimit] Uploading ${field} to Google Drive...`);
-          const { buffer, mimeType, ext } = await googleDrive.downloadFromWati(d[field]);
-          const fileName = `${requestId}_${field}.${ext}`;
-          const driveUrl = await googleDrive.uploadToDrive(buffer, fileName, mimeType);
-          driveUrls[field] = driveUrl;
-        } catch (err: any) {
-          console.error(`[CreditLimit] Failed to upload ${field} to Drive:`, err.message);
-          driveUrls[field] = d[field];
-        }
+    for (let i = 0; i < session.mediaUrls.length && i < docLabels.length; i++) {
+      const mediaUrl = session.mediaUrls[i];
+      const label = docLabels[i];
+      try {
+        console.log(`[CreditLimit] Uploading media ${i + 1} as ${label} to Google Drive...`);
+        const { buffer, mimeType, ext } = await googleDrive.downloadFromWati(mediaUrl);
+        const fileName = `${requestId}_${label}.${ext}`;
+        const driveUrl = await googleDrive.uploadToDrive(buffer, fileName, mimeType);
+        driveUrls[label] = driveUrl;
+      } catch (err: any) {
+        console.error(`[CreditLimit] Failed to upload ${label} to Drive:`, err.message);
+        driveUrls[label] = mediaUrl;
       }
     }
 
     const slackData = {
-      ...d,
+      ...report,
       requestId,
       timestamp,
-      docSignedSO: driveUrls.docSignedSO || d.docSignedSO || '',
-      docFarmerHolding: driveUrls.docFarmerHolding || d.docFarmerHolding || '',
-      docLandOwnership: driveUrls.docLandOwnership || d.docLandOwnership || '',
-      docJaminan: driveUrls.docJaminan || d.docJaminan || '',
+      docSignedSO: driveUrls.docSignedSO || '',
+      docFarmerHolding: driveUrls.docFarmerHolding || '',
+      docLandOwnership: driveUrls.docLandOwnership || '',
+      docJaminan: driveUrls.docJaminan || '',
     };
 
     const slackResult = await slack.postCreditLimitToSlack(session, slackData, (ts, channel) => {
@@ -449,7 +480,7 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
         senderName: displayName,
         reportType: 'creditTopUp',
         requestId,
-        farmerName: d.farmerName,
+        farmerName: report.farmerName || '',
       });
     });
 
@@ -458,18 +489,18 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
       requestId,
       reporterName: displayName,
       reporterPhone: phoneNumber,
-      fgName: d.fgName || '',
-      farmerName: d.farmerName || '',
-      landSizeVerified: d.landParcelSize || '',
-      currentLimit: d.currentLimit || '',
-      requestedTopUp: d.requestedTopUp || '',
-      creditType: d.creditType || '',
-      reason: d.reason || '',
-      soNumber: d.soNumber || '',
-      docSignedSO: driveUrls.docSignedSO || d.docSignedSO || '',
-      docFarmerHolding: driveUrls.docFarmerHolding || d.docFarmerHolding || '',
-      docLandOwnership: driveUrls.docLandOwnership || d.docLandOwnership || '',
-      docJaminan: driveUrls.docJaminan || d.docJaminan || '',
+      fgName: report.fgName || '',
+      farmerName: report.farmerName || '',
+      landSizeVerified: report.landParcelSize || '',
+      currentLimit: report.currentLimit || '',
+      requestedTopUp: report.requestedTopUp || '',
+      creditType: report.creditType || '',
+      reason: report.reason || '',
+      soNumber: report.soNumber || '',
+      docSignedSO: driveUrls.docSignedSO || '',
+      docFarmerHolding: driveUrls.docFarmerHolding || '',
+      docLandOwnership: driveUrls.docLandOwnership || '',
+      docJaminan: driveUrls.docJaminan || '',
       status: 'PENDING',
       reviewedBy: '',
       reviewDate: '',
@@ -487,13 +518,13 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
       type: 'creditTopUp',
       reporter: displayName,
       phoneNumber,
-      summary: `Credit Limit Top Up — ${d.farmerName} — ${d.creditType}`,
+      summary: `Credit Limit Top Up — ${report.farmerName || 'Unknown'} — ${report.creditType || 'Unknown'}`,
       status: 'submitted',
     });
 
     let successMsg = `*Credit Limit Top Up berhasil dikirim!*\n\n`;
     successMsg += `Request ID: *${requestId}*\n`;
-    successMsg += `Farmer: ${d.farmerName}\n`;
+    successMsg += `Farmer: ${report.farmerName || '—'}\n`;
     successMsg += `Tim Ops Excellence sudah dinotifikasi dan akan review permintaan kamu.\n\n`;
     successMsg += `Kamu akan mendapat notifikasi saat permintaan di-approve atau di-reject.\n\n`;
     successMsg += `Ketik *START* untuk permintaan baru.\n\n`;

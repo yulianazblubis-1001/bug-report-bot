@@ -374,20 +374,27 @@ export function buildCreditLimitBlocks(session: BotSession, data: Record<string,
     });
   }
 
+  if (data.validationFlags && data.validationFlags.length > 0) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*⚠️ Validation Flags:*\n${data.validationFlags.map((f: string) => `• ${f}`).join('\n')}` },
+    });
+  }
+
   blocks.push({ type: 'divider' });
 
   let docList = '';
   if (isAgriInput) {
-    docList += `• Signed SO ${data.docSignedSO ? '✅' : '❌'}\n`;
-    docList += `• Farmer holding SO ${data.docFarmerHolding ? '✅' : '❌'}\n`;
+    docList += `• Signed SO ${data.docSignedSO ? `✅ <${data.docSignedSO}|View>` : '❌'}\n`;
+    docList += `• Farmer holding SO ${data.docFarmerHolding ? `✅ <${data.docFarmerHolding}|View>` : '❌'}\n`;
   } else {
-    docList += `• Signed Request Letter ${data.docSignedSO ? '✅' : '❌'}\n`;
-    docList += `• Farmer holding Request Letter ${data.docFarmerHolding ? '✅' : '❌'}\n`;
+    docList += `• Signed Request Letter ${data.docSignedSO ? `✅ <${data.docSignedSO}|View>` : '❌'}\n`;
+    docList += `• Farmer holding Request Letter ${data.docFarmerHolding ? `✅ <${data.docFarmerHolding}|View>` : '❌'}\n`;
   }
 
   if (isLargeFarmer) {
-    docList += `• Proof of land ownership ${data.docLandOwnership ? '✅' : '❌'}\n`;
-    docList += `• Dokumen Jaminan ${data.docJaminan ? '✅' : '❌'}\n`;
+    docList += `• Proof of land ownership ${data.docLandOwnership ? `✅ <${data.docLandOwnership}|View>` : '❌'}\n`;
+    docList += `• Dokumen Jaminan ${data.docJaminan ? `✅ <${data.docJaminan}|View>` : '❌'}\n`;
   }
 
   let docCount = 0;
@@ -415,7 +422,7 @@ export function buildCreditLimitBlocks(session: BotSession, data: Record<string,
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `${mentions} — Please review and reply in this thread:\n• Type *APPROVED* to approve\n• Type *REJECTED [reason]* to reject`,
+        text: `${mentions} — Please review this request in the <${process.env.GOOGLE_SHEETS_ID ? `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEETS_ID}` : 'Google Sheet'}|Credit Limit Sheet>.\n• Update column Q to *APPROVED* or *REJECTED*\n• If rejected, fill column T with the reason`,
       },
     });
   }
@@ -483,6 +490,28 @@ export async function postSlackThreadReply(
   }, {
     headers: { Authorization: `Bearer ${botToken}` },
   });
+}
+
+export async function addSlackReaction(
+  channelId: string,
+  timestamp: string,
+  reaction: string
+): Promise<void> {
+  const botToken = process.env.SLACK_BOT_TOKEN;
+  if (!botToken) return;
+
+  try {
+    await axios.post('https://slack.com/api/reactions.add', {
+      channel: channelId,
+      timestamp: timestamp,
+      name: reaction,
+    }, {
+      headers: { Authorization: `Bearer ${botToken}` },
+    });
+    console.log(`[Slack] Added :${reaction}: to ${timestamp}`);
+  } catch (err: any) {
+    console.error(`[Slack] Failed to add reaction :${reaction}::`, err.message);
+  }
 }
 
 export async function getSlackUserName(userId: string): Promise<string> {
