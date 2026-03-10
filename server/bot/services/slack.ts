@@ -400,21 +400,21 @@ export function buildCreditLimitBlocks(session: BotSession, data: Record<string,
   let docList = '';
   let docCount = 0;
   if (includesAgriInput) {
-    docList += `• Signed SO ${data.docSignedSO ? `✅ <${data.docSignedSO}|View>` : '❌'}\n`;
-    docList += `• Farmer holding SO ${data.docFarmerHoldingSO ? `✅ <${data.docFarmerHoldingSO}|View>` : '❌'}\n`;
+    docList += `• Signed SO ${data.docSignedSO ? '✅' : '❌'}\n`;
+    docList += `• Farmer holding SO ${data.docFarmerHoldingSO ? '✅' : '❌'}\n`;
     if (data.docSignedSO) docCount++;
     if (data.docFarmerHoldingSO) docCount++;
   }
   if (includesMechanization) {
-    docList += `• Signed Request Letter ${data.docSignedRequestLetter ? `✅ <${data.docSignedRequestLetter}|View>` : '❌'}\n`;
-    docList += `• Farmer holding Request Letter ${data.docFarmerHoldingRequestLetter ? `✅ <${data.docFarmerHoldingRequestLetter}|View>` : '❌'}\n`;
+    docList += `• Signed Request Letter ${data.docSignedRequestLetter ? '✅' : '❌'}\n`;
+    docList += `• Farmer holding Request Letter ${data.docFarmerHoldingRequestLetter ? '✅' : '❌'}\n`;
     if (data.docSignedRequestLetter) docCount++;
     if (data.docFarmerHoldingRequestLetter) docCount++;
   }
   if (isLargeFarmer) {
-    docList += `• Proof of land ownership ${data.docLandOwnership ? `✅ <${data.docLandOwnership}|View>` : '❌'}\n`;
-    docList += `• Collateral photo ${data.docCollateralPhoto ? `✅ <${data.docCollateralPhoto}|View>` : '❌'}\n`;
-    docList += `• Collateral certificate ${data.docCollateralCertificate ? `✅ <${data.docCollateralCertificate}|View>` : '❌'}\n`;
+    docList += `• Proof of land ownership ${data.docLandOwnership ? '✅' : '❌'}\n`;
+    docList += `• Collateral photo ${data.docCollateralPhoto ? '✅' : '❌'}\n`;
+    docList += `• Collateral certificate ${data.docCollateralCertificate ? '✅' : '❌'}\n`;
     if (data.docLandOwnership) docCount++;
     if (data.docCollateralPhoto) docCount++;
     if (data.docCollateralCertificate) docCount++;
