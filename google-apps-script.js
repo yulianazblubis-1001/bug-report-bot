@@ -34,7 +34,7 @@ function onSheetEdit(e) {
     var sheet = e.source.getActiveSheet();
     var range = e.range;
     
-    if (sheet.getName() !== 'Sheet1') return;
+    if (sheet.getName() !== 'request') return;
     
     var col = range.getColumn();
     // Column S = 19 (Status column)

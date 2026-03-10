@@ -153,3 +153,5 @@ A WhatsApp chatbot that guides Rize.farm agronomists through bug reports, admin 
 - Sessions auto-expire after 30 minutes of inactivity
 - Trigger keywords: BUG, REPORT, ADMIN, REQUEST, START, MULAI, MENU, LAPOR
 - Google Apps Script: paste `google-apps-script.js` content into Sheet's Apps Script editor
+- Sheet tab name is "request" (not "Sheet1") — all range references use `request!` prefix
+- Apps Script watches col S (19) for status change, tab must be named "request"

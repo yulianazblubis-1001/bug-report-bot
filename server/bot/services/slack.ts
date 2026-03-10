@@ -439,7 +439,7 @@ export function buildCreditLimitBlocks(session: BotSession, data: Record<string,
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `${mentions} — Please review this request in the <${process.env.GOOGLE_SHEETS_ID ? `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEETS_ID}` : 'Google Sheet'}|Credit Limit Sheet>.\n• Update column Q to *APPROVED* or *REJECTED*\n• If rejected, fill column T with the reason`,
+        text: `${mentions} — Please review this request in the <${process.env.GOOGLE_SHEETS_ID ? `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEETS_ID}` : 'Google Sheet'}|Credit Limit Sheet>.\n• Update column S (Status) to *APPROVED* or *REJECTED*\n• If rejected, fill column V (Rejection Reason)`,
       },
     });
   }

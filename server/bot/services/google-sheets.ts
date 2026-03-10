@@ -95,28 +95,9 @@ export interface CreditLimitRow {
 
 export async function appendRequest(data: CreditLimitRow): Promise<void> {
   console.log('[Google Sheets] appendRequest called for request:', data.requestId);
-  console.log('[Google Sheets] Data keys:', Object.keys(data).join(', '));
-  console.log('[Google Sheets] Data values preview:', JSON.stringify({
-    timestamp: data.timestamp,
-    requestId: data.requestId,
-    reporterName: data.reporterName,
-    fgName: data.fgName,
-    farmerName: data.farmerName,
-    status: data.status,
-    slackMessageTs: data.slackMessageTs,
-  }));
 
-  let sheets;
-  try {
-    sheets = await getUncachableGoogleSheetClient();
-    console.log('[Google Sheets] Client obtained successfully');
-  } catch (err: any) {
-    console.error('[Google Sheets] Failed to get client:', err.message);
-    throw err;
-  }
-
+  const sheets = await getUncachableGoogleSheetClient();
   const spreadsheetId = getSheetId();
-  console.log('[Google Sheets] Using spreadsheet ID:', spreadsheetId);
 
   const row = [
     data.timestamp,           // A
@@ -144,23 +125,14 @@ export async function appendRequest(data: CreditLimitRow): Promise<void> {
     data.slackMessageTs,      // W
   ];
 
-  console.log('[Google Sheets] Row array length:', row.length, '(expected 23)');
-  console.log('[Google Sheets] Row data:', JSON.stringify(row));
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: 'request!A:W',
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [row] },
+  });
 
-  try {
-    const result = await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: 'Sheet1!A:W',
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [row] },
-    });
-    console.log('[Google Sheets] Append SUCCESS for request', data.requestId);
-    console.log('[Google Sheets] Append response:', JSON.stringify(result.data));
-  } catch (err: any) {
-    console.error('[Google Sheets] Append FAILED:', err.message);
-    console.error('[Google Sheets] Full error:', JSON.stringify(err.response?.data || err));
-    throw err;
-  }
+  console.log(`[Google Sheets] Appended row for request ${data.requestId}`);
 }
 
 export async function updateStatus(
@@ -174,7 +146,7 @@ export async function updateStatus(
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'Sheet1!B:B',
+    range: 'request!B:B',
   });
 
   const rows = res.data.values || [];
@@ -195,7 +167,7 @@ export async function updateStatus(
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `Sheet1!S${rowIndex}:V${rowIndex}`,
+    range: `request!S${rowIndex}:V${rowIndex}`,
     valueInputOption: 'USER_ENTERED',
     requestBody: {
       values: [[status, reviewedBy, reviewDate, reason || '']],
@@ -211,7 +183,7 @@ export async function findBySlackTs(slackTs: string): Promise<{ rowIndex: number
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'Sheet1!A:W',
+    range: 'request!A:W',
   });
 
   const rows = res.data.values || [];
@@ -233,7 +205,7 @@ export async function findByRequestId(requestId: string): Promise<{ rowIndex: nu
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'Sheet1!A:W',
+    range: 'request!A:W',
   });
 
   const rows = res.data.values || [];
