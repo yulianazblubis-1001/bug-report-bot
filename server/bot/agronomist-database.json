@@ -42,10 +42,10 @@
     "zohoEmail": "muhammad.ridwan@rize-ops.farm"
   },
   "6282135492902": {
-    "name": "Zaenal Abidin",
+    "name": "Iman Samiaji",
     "area": "Grobogan",
-    "personalEmail": "zaenalabidin16049@gmail.com",
-    "zohoEmail": "zaenal.abidin@rize-ops.farm"
+    "personalEmail": "",
+    "zohoEmail": "iman.samiaji@rize-ops.farm"
   },
   "6282222266039": {
     "name": "Shaoma Rian",
@@ -424,5 +424,17 @@
     "area": "AWD manager",
     "personalEmail": "arifin@rize.farm",
     "zohoEmail": "arifin@rize.farm"
+  },
+  "6285858660918": {
+    "name": "Wildan Zaki Mubarak",
+    "area": "Cilacap",
+    "personalEmail": "",
+    "zohoEmail": "wildan.zaki@rize-ops.farm"
+  },
+  "6281808174705": {
+    "name": "Irfan",
+    "area": "",
+    "personalEmail": "",
+    "zohoEmail": ""
   }
 }
