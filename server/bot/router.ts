@@ -68,34 +68,19 @@ _(Choose type: 1 for Standard, 2 for Large Farmer)_`;
 
 const CREDIT_LIMIT_START_MSG = `🏦 *Credit Limit Top Up*
 
-Jelaskan permintaan credit limit top up kamu. Saya akan memandu kamu mengumpulkan semua informasi yang dibutuhkan.
+Saya akan tanya data satu per satu ya.
 
-Yang wajib dilengkapi:
-- Nama FG dan Farmer
-- Luas lahan (Ha)
-- Credit limit sekarang dan jumlah top up
-- Jenis credit (Agri Input / Mechanization / Keduanya)
-- Alasan detail
-- Dokumen pendukung (foto)
+Pertama, siapa *nama Farmer Group (FG)*-nya?
 
-_(Describe your credit limit top-up request. I'll guide you through all required information.)_`;
+_(I'll ask for information step by step. First: what is the Farmer Group (FG) name?)_`;
 
 const CREDIT_LIMIT_LARGE_START_MSG = `🏦 *Credit Limit Top Up — Petani Besar*
 
-Jelaskan permintaan credit limit top up untuk Petani Besar (lahan > 2.5 Ha). Saya akan memandu kamu mengumpulkan semua informasi yang dibutuhkan.
+Saya akan tanya data satu per satu ya.
 
-Yang wajib dilengkapi:
-- Nama FG dan Farmer
-- Luas lahan (Ha) — harus > 2.5 Ha
-- Credit limit sekarang dan jumlah top up
-- Jenis credit (Agri Input / Mechanization / Keduanya)
-- Alasan detail
-- Sumber pendapatan petani
-- Potensi bisnis
-- Jenis jaminan dan dokumennya
-- Dokumen pendukung (foto)
+Pertama, siapa *nama Farmer Group (FG)*-nya?
 
-_(Describe your credit limit top-up request for Large Farmer. I'll guide you through all required information.)_`;
+_(I'll ask for information step by step. First: what is the Farmer Group (FG) name?)_`;
 
 const CONFIRM_ONLY_MSG = `Di langkah ini, saya hanya mengerti:
 
@@ -236,10 +221,23 @@ export async function handleMessage(
 
   if (currentSession.step === 'COLLECTING') {
     const msgHasMedia = messageType === 'image' || messageType === 'video' || messageType === 'document';
-    const messageMediaUrls: string[] = [];
 
     if (msgHasMedia && mediaUrl) {
       currentSession.mediaUrls.push(mediaUrl);
+    }
+
+    if (currentSession.isProcessing) {
+      if (msgHasMedia && mediaUrl) {
+        currentSession.pendingMediaUrls.push(mediaUrl);
+        console.log(`[Router] Media queued while processing for ${phoneNumber} (pending: ${currentSession.pendingMediaUrls.length})`);
+      } else if (cleanText) {
+        console.log(`[Router] Text ignored while processing for ${phoneNumber}: "${cleanText.substring(0, 60)}"`);
+      }
+      return;
+    }
+
+    const messageMediaUrls: string[] = [];
+    if (msgHasMedia && mediaUrl) {
       messageMediaUrls.push(mediaUrl);
     }
 
@@ -269,56 +267,79 @@ export async function handleMessage(
       });
     }
 
-    const analyzingMsg = currentSession.reportType === 'creditTopUp'
-      ? 'Sedang memproses data kamu...'
-      : 'Sedang menganalisis laporan kamu...';
-    await wati.sendMessage(phoneNumber, analyzingMsg);
+    currentSession.isProcessing = true;
+    try {
+      const analyzingMsg = currentSession.reportType === 'creditTopUp'
+        ? 'Sedang memproses data kamu...'
+        : 'Sedang menganalisis laporan kamu...';
+      await wati.sendMessage(phoneNumber, analyzingMsg);
 
-    const hasScreenshot = currentSession.mediaUrls.length > 0;
-    const isLargeFarmer = currentSession.creditLimitType === 'largeFarmer';
-    const maxFollowUps = currentSession.reportType === 'creditTopUp' ? (isLargeFarmer ? 12 : 8) : 3;
+      const hasScreenshot = currentSession.mediaUrls.length > 0;
+      const isLargeFarmer = currentSession.creditLimitType === 'largeFarmer';
+      const maxFollowUps = currentSession.reportType === 'creditTopUp' ? (isLargeFarmer ? 12 : 8) : 3;
 
-    const result = await evaluateReport(
-      currentSession.conversation,
-      currentSession.reportType!,
-      currentSession.followUpCount,
-      hasScreenshot,
-      currentSession.creditLimitType
-    );
+      const result = await evaluateReport(
+        currentSession.conversation,
+        currentSession.reportType!,
+        currentSession.followUpCount,
+        hasScreenshot,
+        currentSession.creditLimitType
+      );
 
-    if (result.parsedReport && Object.keys(result.parsedReport).length > 0) {
-      currentSession.parsedReport = {
-        ...(currentSession.parsedReport || {}),
-        ...result.parsedReport,
-      };
-    }
+      if (result.parsedReport && Object.keys(result.parsedReport).length > 0) {
+        currentSession.parsedReport = {
+          ...(currentSession.parsedReport || {}),
+          ...result.parsedReport,
+        };
+      }
 
-    if (result.status === 'need_more_info' && result.followUpQuestion && currentSession.followUpCount < maxFollowUps) {
-      currentSession.followUpCount++;
-      currentSession.conversation.push({
-        role: 'assistant',
-        text: result.followUpQuestion,
-      });
-      await wati.sendMessage(phoneNumber, result.followUpQuestion);
-      return;
-    }
+      if (currentSession.pendingMediaUrls.length > 0) {
+        console.log(`[Router] Flushing ${currentSession.pendingMediaUrls.length} pending media for ${phoneNumber}`);
+        for (const pendingUrl of currentSession.pendingMediaUrls) {
+          if (!currentSession.mediaUrls.includes(pendingUrl)) {
+            currentSession.mediaUrls.push(pendingUrl);
+          }
+          currentSession.conversation.push({ role: 'user', text: '', mediaUrls: [pendingUrl] });
+        }
+        currentSession.pendingMediaUrls = [];
+      }
 
-    if (currentSession.reportType === 'creditTopUp' && result.parsedReport) {
-      const r = result.parsedReport;
-      const coreFields = [r.fgName, r.farmerName, r.landParcelSize, r.currentLimit, r.requestedTopUp];
-      const allNull = coreFields.every((f: any) => !f || f === 'null');
-      if (allNull) {
-        const incompleteMsg = '⚠️ Data belum lengkap. Silakan ketik *ULANG* dan kirim data yang lengkap.\n\n_(Data is incomplete. Type ULANG to restart and provide complete data.)_';
-        await wati.sendMessage(phoneNumber, incompleteMsg);
+      if (result.status === 'need_more_info' && result.followUpQuestion && currentSession.followUpCount < maxFollowUps) {
+        currentSession.followUpCount++;
+        currentSession.conversation.push({
+          role: 'assistant',
+          text: result.followUpQuestion,
+        });
+        await wati.sendMessage(phoneNumber, result.followUpQuestion);
         return;
       }
-    }
 
-    currentSession.step = 'CONFIRMING';
-    const summary = currentSession.reportType === 'creditTopUp'
-      ? buildCreditLimitSummary(currentSession)
-      : buildSummary(currentSession);
-    await wati.sendMessage(phoneNumber, summary);
+      if (currentSession.reportType === 'creditTopUp' && result.parsedReport) {
+        const r = result.parsedReport;
+        const coreFields = [r.fgName, r.farmerName, r.landParcelSize, r.currentLimit, r.requestedTopUp];
+        const allNull = coreFields.every((f: any) => !f || f === 'null');
+        if (allNull) {
+          const incompleteMsg = '⚠️ Data belum lengkap. Silakan ketik *ULANG* dan kirim data yang lengkap.\n\n_(Data is incomplete. Type ULANG to restart and provide complete data.)_';
+          await wati.sendMessage(phoneNumber, incompleteMsg);
+          return;
+        }
+      }
+
+      currentSession.step = 'CONFIRMING';
+      const summary = currentSession.reportType === 'creditTopUp'
+        ? buildCreditLimitSummary(currentSession)
+        : buildSummary(currentSession);
+      await wati.sendMessage(phoneNumber, summary);
+      return;
+    } catch (err: any) {
+      console.error('[Router] COLLECTING error:', err.message);
+      await wati.sendMessage(
+        phoneNumber,
+        'Maaf, ada kesalahan saat memproses. Coba ketik *ULANG* untuk mulai ulang, atau *START* untuk kembali ke menu utama.\n\n_(Error while processing. Type ULANG to restart.)_'
+      );
+    } finally {
+      currentSession.isProcessing = false;
+    }
     return;
   }
 
@@ -342,9 +363,11 @@ export async function handleMessage(
       currentSession.step = 'COLLECTING';
       currentSession.conversation = [];
       currentSession.mediaUrls = [];
+      currentSession.pendingMediaUrls = [];
       currentSession.followUpCount = 0;
       currentSession.parsedReport = null;
       currentSession.data = {};
+      currentSession.isProcessing = false;
       let startMsg = BUG_START_MSG;
       if (currentSession.reportType === 'creditTopUp') {
         startMsg = currentSession.creditLimitType === 'largeFarmer' ? CREDIT_LIMIT_LARGE_START_MSG : CREDIT_LIMIT_START_MSG;
@@ -356,6 +379,12 @@ export async function handleMessage(
     await wati.sendMessage(phoneNumber, CONFIRM_ONLY_MSG);
     return;
   }
+
+  console.warn(`[Router] Unhandled state for ${phoneNumber}: step=${currentSession.step} type=${currentSession.reportType} text="${cleanText.substring(0, 60)}"`);
+  await wati.sendMessage(
+    phoneNumber,
+    `Maaf, saya tidak bisa memproses pesan ini. Ketik *ULANG* untuk mulai ulang, atau *START* untuk kembali ke menu utama.\n\n_(Can't process this message. Type ULANG to restart or START for main menu.)_`
+  );
 }
 
 function isMediaType(messageType: string): boolean {

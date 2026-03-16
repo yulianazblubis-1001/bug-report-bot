@@ -1,0 +1,106 @@
+Bug: Credit Limit Type 2 flow silently ignores user message when they send all data at once
+What's happening:
+When a user reaches the CL_TYPE2_FG step, the bot prompt lists ALL required fields (FG name, farmer name, luas lahan, income, etc.). The user copies the template, fills everything in one big message, and sends it. The bot expects only the FG name at that step, gets a multi-line block, and does nothing — no reply, no error. User thinks bot is dead.
+Real example of what the user sent at CL_TYPE2_FG step:
+Yang wajib dilengkapi:
+- Nama FG dan Farmer: Pusaka Mandiri - Rokib
+- Luas lahan (Ha) — 2.54 ha
+- Credit limit sekarang dan jumlah top up : Rp 1 (habis) ; jumlah Top up: Rp 10.000.000
+- Jenis credit (Agri Input / Mechanization / Keduanya) : Agri Input
+- Alasan detail : petani sudah order 2 musim dan lunas dengan value puluhan juta, musim ini terhambat order karena credit limit
+- Sumber pendapatan petani : Pemilik Kios pertanian dan sawah pribadi
+- Potensi bisnis : kios pertanian dan sawah pribadi
+- Jenis jaminan dan dokumennya : Surat usaha kios
+- Dokumen pendukung (terlampir)
+Then sent 3 photos right after. Bot never replied to any of it.
+
+Fix required — 3 parts:
+Part 1: Detect and parse all-in-one message
+In the credit limit flow handler, at the CL_TYPE2_FG step, add a check BEFORE the normal single-field handler:
+typescript// At CL_TYPE2_FG step, check if user sent a big block of data
+if (step === 'CL_TYPE2_FG' && (cleanText.length > 80 || cleanText.includes('\n'))) {
+  // User probably filled all fields in one message — parse it with Claude
+  const extractionPrompt = `Extract these fields from the user's credit limit request message. Return ONLY valid JSON, no markdown, no backticks:
+{
+  "fgName": "farmer group name or null",
+  "farmerName": "farmer name or null",
+  "landArea": "land area in Ha or null",
+  "currentLimit": "current credit limit or null",
+  "topUpAmount": "requested top up amount or null",
+  "creditType": "agri_input or mechanization or both or null",
+  "reason": "reason for request or null",
+  "incomeSources": "farmer income sources or null",
+  "businessPotential": "business potential or null",
+  "collateralType": "collateral/jaminan type or null"
+}
+
+User message:
+${cleanText}`;
+
+  // Call Claude API to extract
+  const extracted = await callClaudeExtraction(extractionPrompt);
+  
+  if (extracted && extracted.fgName) {
+    // Fill session data with everything extracted
+    const d = session.creditLimitData;
+    d.fgName = extracted.fgName;
+    if (extracted.farmerName) d.farmerName = extracted.farmerName;
+    if (extracted.incomeSources) d.incomeSources = extracted.incomeSources;
+    if (extracted.businessPotential) d.businessPotential = extracted.businessPotential;
+    if (extracted.topUpAmount) d.limitRequested = extracted.topUpAmount;
+    if (extracted.collateralType) d.collateralType = extracted.collateralType;
+    if (extracted.landArea) d.landArea = extracted.landArea;
+    if (extracted.currentLimit) d.currentLimit = extracted.currentLimit;
+    if (extracted.creditType) d.creditType = extracted.creditType;
+    if (extracted.reason) d.reason = extracted.reason;
+
+    // Skip to docs step — ask for photos
+    session.creditLimitStep = 'CL_TYPE2_DOCS';
+    await wati.sendMessage(phoneNumber,
+      `✅ Data diterima! Terima kasih.\n\n` +
+      `Sekarang kirim *dokumen pendukung*:\n` +
+      `1️⃣ Bukti kepemilikan lahan / surat sewa (> 2.5 Ha)\n` +
+      `2️⃣ Dokumen jaminan (${extracted.collateralType || 'sesuai yang disebutkan'})\n\n` +
+      `Kirim foto/file-nya sekarang ya.`
+    );
+    return;
+  }
+  // If extraction failed, fall through to normal single-field handler
+}
+Part 2: Same fix for Type 1
+Add the same detection at CL_TYPE1_FG step. If user sends a big block, extract fields and skip to CL_TYPE1_DOCS.
+Part 3: Never go silent — add catch-all reply
+At the END of the credit limit flow handler function, after all step checks, add:
+typescript// CATCH-ALL: if we reach here, no step matched the input
+// NEVER silently ignore — always reply
+console.warn(`[CreditLimit] Unhandled input at step ${session.creditLimitStep}: ${cleanText.substring(0, 100)}`);
+await wati.sendMessage(phoneNumber,
+  `Maaf, saya belum bisa proses pesan ini di langkah sekarang. ` +
+  `Coba ketik *ULANG* untuk mulai ulang, atau *START* untuk kembali ke menu utama.`
+);
+```
+
+---
+
+**Also fix the initial prompt text** that causes this confusion:
+
+Find the message for `CL_TYPE2` start (the one that lists all fields). Change it to:
+```
+🏦 *Credit Limit Top Up — Petani Besar*
+
+Saya akan tanya data satu per satu ya.
+
+Pertama, siapa *nama Farmer Group (FG)*-nya?
+```
+
+Remove the full checklist from the prompt. The checklist makes users think they should fill everything at once. If you want to keep the checklist as reference, put it AFTER the first question like:
+```
+(Nanti saya akan tanya: nama petani, luas lahan, sumber pendapatan, potensi bisnis, limit kredit, dan dokumen pendukung.)
+
+Edge cases to handle:
+
+Photos arrive before the text parsing is done — if user sends photos right after the big text block (within seconds), store them in pendingMediaUrls array. When step moves to CL_TYPE2_DOCS, check if pendingMediaUrls already has files — if yes, skip asking for docs and go to confirmation.
+Partial extraction — if Claude can only extract some fields (e.g. FG name + farmer name but not income), fill what you can and resume step-by-step from the first missing field. Don't make user redo everything.
+User sends the template text without filling it — if Claude extraction returns the placeholder text itself (like "harus > 2.5 Ha" without an actual number), treat it as null and ask the question normally.
+Session timeout — make sure session timeout is at least 30 minutes. The real user sent data at 02:49 and photos at 02:50 — if timeout is shorter than that, the photos get lost.
+ Opus 4.6Extended

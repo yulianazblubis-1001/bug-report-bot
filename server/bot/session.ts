@@ -24,9 +24,11 @@ export interface BotSession {
   creditLimitType: 'standard' | 'largeFarmer' | null;
   conversation: ConversationMessage[];
   mediaUrls: string[];
+  pendingMediaUrls: string[];
   followUpCount: number;
   parsedReport: Record<string, any> | null;
   data: Record<string, any>;
+  isProcessing: boolean;
   lastActivity: number;
   createdAt: number;
 }
@@ -67,6 +69,8 @@ class SessionStore {
       this.sessions.delete(phoneNumber);
       return null;
     }
+    if (!session.pendingMediaUrls) session.pendingMediaUrls = [];
+    if (session.isProcessing === undefined) session.isProcessing = false;
     session.lastActivity = Date.now();
     return session;
   }
@@ -81,9 +85,11 @@ class SessionStore {
       creditLimitType: null,
       conversation: [],
       mediaUrls: [],
+      pendingMediaUrls: [],
       followUpCount: 0,
       parsedReport: null,
       data: {},
+      isProcessing: false,
       lastActivity: Date.now(),
       createdAt: Date.now(),
     };
