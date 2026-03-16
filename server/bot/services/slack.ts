@@ -441,7 +441,7 @@ export function buildCreditLimitBlocks(session: BotSession, data: Record<string,
 
   const mentionOps = process.env.SLACK_MENTION_OPS;
   if (mentionOps) {
-    const mentions = mentionOps.split(',').map(id => `<@${id.trim()}>`).join(' ');
+    const mentions = mentionOps.split(',').map(id => `<@${id.trim().replace(/^@/, '')}>`).join(' ');
     blocks.push({
       type: 'section',
       text: {

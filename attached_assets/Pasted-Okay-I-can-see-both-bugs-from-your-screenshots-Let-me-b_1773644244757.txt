@@ -1,0 +1,38 @@
+Okay, I can see both bugs from your screenshots. Let me break them down.
+Bug 1: Slack user mentions not working
+In your Slack message, the approvers show as raw text: @D07QMKRV21H @D0AEFHU6TK7 @D08DR8R0EVC. Slack doesn't recognize these as real mentions — nobody gets pinged.
+The fix is simple. In Slack's mrkdwn format, you must wrap user IDs with angle brackets like <@D07QMKRV21H>. Without the <@ > wrapper, Slack treats it as plain text.
+Bug 2: Document links are WATI URLs, not Google Drive
+Looking at your sheet (columns O, P, Q, R), some cells show https://live-mt-se... — that's the raw WATI media server URL. These links will expire or become inaccessible. They should be uploaded to Google Drive first, then the Drive link saved to the sheet.
+
+Here's your Replit prompt — copy-paste this:
+
+2 bugs to fix in the credit limit bot:
+Bug 1: Slack approver mentions are plain text, not real mentions
+In the code that builds the Slack message blocks for credit limit requests, find where the approver user IDs are inserted (like @D07QMKRV21H @D0AEFHU6TK7 @D08DR8R0EVC). These are plain strings — Slack ignores them.
+Fix: Change every approver mention from @USER_ID to <@USER_ID>. Example:
+// WRONG (shows as plain text, no ping)
+text: "@D07QMKRV21H @D0AEFHU6TK7 @D08DR8R0EVC"
+
+// CORRECT (Slack renders as clickable mention + sends notification)
+text: "<@D07QMKRV21H> <@D0AEFHU6TK7> <@D08DR8R0EVC>"
+Search the codebase for any place where approver IDs or reviewer IDs are placed in Slack message text and make sure ALL of them use the <@ID> format.
+Bug 2: Document URLs in Google Sheet are raw WATI links, not Google Drive links
+When the bot receives photos/documents from WhatsApp (via WATI webhook), it stores the raw WATI media URL (like https://live-mt-server.wati.io/...) directly into the Google Sheet columns O, P, Q, R. These links expire and are not accessible to the ops team.
+Fix: Before saving doc URLs to the sheet, download each file from the WATI URL and upload it to Google Drive, then save the Google Drive shareable link instead. The flow should be:
+
+Get WATI media URL from webhook
+Download the file from WATI (fetch(watiUrl))
+Upload the file to Google Drive using the service account (use drive.files.create with the file buffer)
+Make the file viewable (set permission to anyone with link)
+Save the Google Drive link (https://drive.google.com/file/d/{fileId}/view) to the sheet
+
+If Google Drive upload fails, fall back to the WATI URL but log a warning.
+
+Edge cases to watch out for:
+
+WATI media URL might need auth — check if your WATI URLs need the Authorization: Bearer <WATI_TOKEN> header when downloading. Some do, some don't. Test by opening a WATI URL in incognito — if it 403s, you need the token.
+Multiple docs uploaded one by one — if the user sends 5 photos, each one triggers a separate webhook. Make sure each individual file gets uploaded to Drive, not just the last one.
+Drive upload quota — Google Drive API has limits (~750 GB/day for uploads). You won't hit this, but handle the error gracefully just in case.
+File naming — name the Drive files something useful like CL-{refId}-doc-{index}.jpg so ops can find them easily.
+Approver list might be hardcoded — if the approver IDs are hardcoded strings, that's fine for now. But if you add/remove reviewers later, you'll need to update the code. Consider storing them in an env variable like SLACK_APPROVER_IDS=D07QMKRV21H,D0AEFHU6TK7,D08DR8R0EVC for easier changes.

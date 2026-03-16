@@ -1,7 +1,54 @@
-import { ReplitConnectors } from '@replit/connectors-sdk';
+import { google } from 'googleapis';
 import axios from 'axios';
+import { Readable } from 'stream';
 
-const connectors = new ReplitConnectors();
+let connectionSettings: any = null;
+
+async function getAccessToken(): Promise<string> {
+  if (connectionSettings && connectionSettings.settings?.expires_at && new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
+    return connectionSettings.settings.access_token;
+  }
+
+  connectionSettings = null;
+
+  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
+  const xReplitToken = process.env.REPL_IDENTITY
+    ? 'repl ' + process.env.REPL_IDENTITY
+    : process.env.WEB_REPL_RENEWAL
+    ? 'depl ' + process.env.WEB_REPL_RENEWAL
+    : null;
+
+  if (!xReplitToken) {
+    throw new Error('X-Replit-Token not found for repl/depl');
+  }
+
+  connectionSettings = await fetch(
+    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=google-drive',
+    {
+      headers: {
+        'Accept': 'application/json',
+        'X-Replit-Token': xReplitToken,
+      },
+    }
+  ).then(res => res.json()).then(data => data.items?.[0]);
+
+  const accessToken = connectionSettings?.settings?.access_token || connectionSettings?.settings?.oauth?.credentials?.access_token;
+
+  if (!connectionSettings || !accessToken) {
+    console.error('[Google Drive] Connection failed. Has settings:', !!connectionSettings?.settings);
+    throw new Error('Google Drive not connected');
+  }
+
+  console.log('[Google Drive] Access token obtained');
+  return accessToken;
+}
+
+async function getUncachableDriveClient() {
+  const accessToken = await getAccessToken();
+  const oauth2Client = new google.auth.OAuth2();
+  oauth2Client.setCredentials({ access_token: accessToken });
+  return google.drive({ version: 'v3', auth: oauth2Client });
+}
 
 export async function uploadToDrive(
   fileBuffer: Buffer,
@@ -11,71 +58,45 @@ export async function uploadToDrive(
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
   if (!folderId) throw new Error('GOOGLE_DRIVE_FOLDER_ID not set');
 
-  const boundary = '-----FormBoundary' + Date.now().toString(36);
-  const metadata = JSON.stringify({
-    name: fileName,
-    parents: [folderId],
+  const drive = await getUncachableDriveClient();
+
+  const stream = Readable.from(fileBuffer);
+
+  const uploadRes = await drive.files.create({
+    requestBody: {
+      name: fileName,
+      parents: [folderId],
+    },
+    media: {
+      mimeType,
+      body: stream,
+    },
+    fields: 'id',
   });
 
-  const multipartBody = Buffer.concat([
-    Buffer.from(
-      `--${boundary}\r\n` +
-      `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-      metadata + '\r\n' +
-      `--${boundary}\r\n` +
-      `Content-Type: ${mimeType}\r\n\r\n`
-    ),
-    fileBuffer,
-    Buffer.from(`\r\n--${boundary}--`),
-  ]);
-
-  const uploadRes = await connectors.proxy(
-    'google-drive',
-    '/upload/drive/v3/files?uploadType=multipart',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': `multipart/related; boundary=${boundary}`,
-      },
-      body: multipartBody,
-    }
-  );
-
-  const uploadData = await uploadRes.json();
-
-  if (!uploadData.id) {
-    console.error('[Google Drive] Upload failed:', uploadData);
-    throw new Error('Failed to upload file to Google Drive');
+  const fileId = uploadRes.data.id;
+  if (!fileId) {
+    throw new Error('Failed to upload file to Google Drive — no file ID returned');
   }
 
-  const fileId = uploadData.id;
-
-  await connectors.proxy(
-    'google-drive',
-    `/drive/v3/files/${fileId}/permissions`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+  try {
+    await drive.permissions.create({
+      fileId,
+      requestBody: {
         role: 'reader',
         type: 'domain',
         domain: 'rize.farm',
-      }),
-    }
-  ).catch(async () => {
-    await connectors.proxy(
-      'google-drive',
-      `/drive/v3/files/${fileId}/permissions`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          role: 'reader',
-          type: 'anyone',
-        }),
-      }
-    );
-  });
+      },
+    });
+  } catch {
+    await drive.permissions.create({
+      fileId,
+      requestBody: {
+        role: 'reader',
+        type: 'anyone',
+      },
+    });
+  }
 
   const driveUrl = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
   console.log(`[Google Drive] Uploaded ${fileName} → ${driveUrl}`);
