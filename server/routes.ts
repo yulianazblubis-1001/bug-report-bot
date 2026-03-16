@@ -149,7 +149,7 @@ export async function registerRoutes(
 
         if (!itemTs || !channelId) return;
 
-        const mapping = sessionStore.getSlackMapping(itemTs, channelId);
+        const mapping = await sessionStore.getSlackMapping(itemTs, channelId);
         if (!mapping) {
           console.log(`[Slack Events] No mapping found for ${channelId}:${itemTs}`);
           return;

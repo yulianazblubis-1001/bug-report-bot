@@ -1,10 +1,6 @@
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { ensureTable, storeMapping, getMapping, findMappingByRequestId, pruneOldMappings } from './slack-map-db';
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
-const SLACK_MAP_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const PERSIST_DIR = join(process.cwd(), '.data');
-const SLACK_MAP_FILE = join(PERSIST_DIR, 'slack-mappings.json');
 
 export interface ConversationMessage {
   role: 'user' | 'assistant';
@@ -42,65 +38,26 @@ export interface SlackMapping {
   summary?: string;
   requestId?: string;
   farmerName?: string;
-  storedAt?: number;
-}
-
-interface PersistedSlackMap {
-  [key: string]: SlackMapping;
-}
-
-function loadSlackMap(): Map<string, SlackMapping> {
-  try {
-    if (!existsSync(PERSIST_DIR)) {
-      mkdirSync(PERSIST_DIR, { recursive: true });
-    }
-    if (!existsSync(SLACK_MAP_FILE)) {
-      return new Map();
-    }
-    const raw = readFileSync(SLACK_MAP_FILE, 'utf-8');
-    const data: PersistedSlackMap = JSON.parse(raw);
-    const map = new Map<string, SlackMapping>();
-    const cutoff = Date.now() - SLACK_MAP_TTL_MS;
-    let loaded = 0;
-    let expired = 0;
-    for (const [key, value] of Object.entries(data)) {
-      if (!value.storedAt || value.storedAt > cutoff) {
-        map.set(key, value);
-        loaded++;
-      } else {
-        expired++;
-      }
-    }
-    console.log(`[SlackMap] Loaded ${loaded} mappings from disk (${expired} expired and pruned)`);
-    return map;
-  } catch (err: any) {
-    console.error('[SlackMap] Failed to load from disk:', err.message);
-    return new Map();
-  }
-}
-
-function saveSlackMap(map: Map<string, SlackMapping>): void {
-  try {
-    if (!existsSync(PERSIST_DIR)) {
-      mkdirSync(PERSIST_DIR, { recursive: true });
-    }
-    const obj: PersistedSlackMap = {};
-    for (const [key, value] of map.entries()) {
-      obj[key] = value;
-    }
-    writeFileSync(SLACK_MAP_FILE, JSON.stringify(obj, null, 2), 'utf-8');
-  } catch (err: any) {
-    console.error('[SlackMap] Failed to save to disk:', err.message);
-  }
 }
 
 class SessionStore {
   private sessions = new Map<string, BotSession>();
-  private slackMap: Map<string, SlackMapping>;
+  private initialized = false;
 
   constructor() {
-    this.slackMap = loadSlackMap();
     setInterval(() => this.cleanup(), 5 * 60 * 1000);
+    this.init();
+  }
+
+  private async init(): Promise<void> {
+    try {
+      await ensureTable();
+      await pruneOldMappings(30);
+      this.initialized = true;
+      console.log('[SessionStore] DB-backed Slack mappings ready');
+    } catch (err: any) {
+      console.error('[SessionStore] Failed to initialize DB:', err.message);
+    }
   }
 
   get(phoneNumber: string): BotSession | null {
@@ -138,32 +95,30 @@ class SessionStore {
     this.sessions.delete(phoneNumber);
   }
 
-  storeSlackMapping(slackTs: string, channelId: string, data: SlackMapping): void {
-    const key = `${channelId}:${slackTs}`;
-    const entry: SlackMapping = { ...data, storedAt: Date.now() };
-    this.slackMap.set(key, entry);
-    saveSlackMap(this.slackMap);
-    console.log(`[SlackMap] Stored mapping for ${data.senderName} (${data.reportType}) key=${key}`);
+  async storeSlackMapping(slackTs: string, channelId: string, data: SlackMapping): Promise<void> {
+    try {
+      await storeMapping(slackTs, channelId, data);
+    } catch (err: any) {
+      console.error('[SessionStore] Failed to store Slack mapping:', err.message);
+    }
   }
 
-  getSlackMapping(slackTs: string, channelId: string): SlackMapping | undefined {
-    const key = `${channelId}:${slackTs}`;
-    const mapping = this.slackMap.get(key);
-    if (mapping) {
-      console.log(`[SlackMap] Found mapping for key=${key}: ${mapping.senderName} (${mapping.reportType})`);
-    } else {
-      console.log(`[SlackMap] No mapping found for key=${key} (total stored: ${this.slackMap.size})`);
+  async getSlackMapping(slackTs: string, channelId: string): Promise<SlackMapping | null> {
+    try {
+      return await getMapping(slackTs, channelId);
+    } catch (err: any) {
+      console.error('[SessionStore] Failed to get Slack mapping:', err.message);
+      return null;
     }
-    return mapping;
   }
 
-  findSlackMappingByRequestId(requestId: string): { key: string; mapping: SlackMapping } | undefined {
-    for (const [key, mapping] of this.slackMap.entries()) {
-      if (mapping.requestId === requestId) {
-        return { key, mapping };
-      }
+  async findSlackMappingByRequestId(requestId: string): Promise<{ key: string; mapping: SlackMapping } | null> {
+    try {
+      return await findMappingByRequestId(requestId);
+    } catch (err: any) {
+      console.error('[SessionStore] Failed to find mapping by requestId:', err.message);
+      return null;
     }
-    return undefined;
   }
 
   getActiveSessions(): number {
