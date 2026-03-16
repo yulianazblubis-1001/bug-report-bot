@@ -68,29 +68,30 @@ function getWIBTimestamp(): string {
 }
 
 export interface CreditLimitRow {
-  timestamp: string;        // A
-  requestId: string;        // B
-  reporterName: string;     // C
-  reporterPhone: string;    // D
-  fgName: string;           // E
-  farmerName: string;       // F
-  landSizeVerified: string; // G
-  currentLimit: string;     // H
-  requestedTopUp: string;   // I
-  creditType: string;       // J
-  reason: string;           // K
-  soNumber: string;         // L
+  timestamp: string;               // A
+  requestId: string;               // B
+  reporterName: string;            // C
+  reporterPhone: string;           // D
+  fgName: string;                  // E
+  farmerName: string;              // F
+  landSizeVerified: string;        // G
+  currentLimit: string;            // H
+  requestedTopUp: string;          // I
+  creditType: string;              // J
+  reason: string;                  // K
+  soNumber: string;                // L
   farmerIncomeAndBusiness: string; // M
-  collateralInfo: string;   // N
-  docSignedSO: string;      // O
-  docFarmerHolding: string;  // P
-  docLandOwnership: string;  // Q
-  docJaminan: string;        // R
-  status: string;            // S
-  reviewedBy: string;        // T
-  reviewDate: string;        // U
-  rejectionReason: string;   // V
-  slackMessageTs: string;    // W
+  collateralInfo: string;          // N
+  docSignedSO: string;             // O
+  docFarmerHolding: string;        // P
+  docLandOwnership: string;        // Q
+  docJaminan: string;              // R
+  docSurveyPhotoTM: string;        // S ← NEW
+  status: string;                  // T (was S)
+  reviewedBy: string;              // U (was T)
+  reviewDate: string;              // V (was U)
+  rejectionReason: string;         // W (was V)
+  slackMessageTs: string;          // X (was W)
 }
 
 export async function appendRequest(data: CreditLimitRow): Promise<void> {
@@ -100,34 +101,35 @@ export async function appendRequest(data: CreditLimitRow): Promise<void> {
   const spreadsheetId = getSheetId();
 
   const row = [
-    data.timestamp,           // A
-    data.requestId,           // B
-    data.reporterName,        // C
-    data.reporterPhone,       // D
-    data.fgName,              // E
-    data.farmerName,          // F
-    data.landSizeVerified,    // G
-    data.currentLimit,        // H
-    data.requestedTopUp,      // I
-    data.creditType,          // J
-    data.reason,              // K
-    data.soNumber,            // L
+    data.timestamp,               // A
+    data.requestId,               // B
+    data.reporterName,            // C
+    data.reporterPhone,           // D
+    data.fgName,                  // E
+    data.farmerName,              // F
+    data.landSizeVerified,        // G
+    data.currentLimit,            // H
+    data.requestedTopUp,          // I
+    data.creditType,              // J
+    data.reason,                  // K
+    data.soNumber,                // L
     data.farmerIncomeAndBusiness, // M
-    data.collateralInfo,      // N
-    data.docSignedSO,         // O
-    data.docFarmerHolding,    // P
-    data.docLandOwnership,    // Q
-    data.docJaminan,          // R
-    data.status,              // S
-    data.reviewedBy,          // T
-    data.reviewDate,          // U
-    data.rejectionReason,     // V
-    data.slackMessageTs,      // W
+    data.collateralInfo,          // N
+    data.docSignedSO,             // O
+    data.docFarmerHolding,        // P
+    data.docLandOwnership,        // Q
+    data.docJaminan,              // R
+    data.docSurveyPhotoTM,        // S ← NEW
+    data.status,                  // T (was S)
+    data.reviewedBy,              // U (was T)
+    data.reviewDate,              // V (was U)
+    data.rejectionReason,         // W (was V)
+    data.slackMessageTs,          // X (was W)
   ];
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: 'request!A:W',
+    range: 'request!A:X',
     valueInputOption: 'RAW',
     requestBody: { values: [row] },
   });
@@ -167,7 +169,7 @@ export async function updateStatus(
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `request!S${rowIndex}:V${rowIndex}`,
+    range: `request!T${rowIndex}:W${rowIndex}`,
     valueInputOption: 'USER_ENTERED',
     requestBody: {
       values: [[status, reviewedBy, reviewDate, reason || '']],
@@ -183,12 +185,12 @@ export async function findBySlackTs(slackTs: string): Promise<{ rowIndex: number
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'request!A:W',
+    range: 'request!A:X',
   });
 
   const rows = res.data.values || [];
   for (let i = 0; i < rows.length; i++) {
-    if (rows[i][22] === slackTs) {
+    if (rows[i][23] === slackTs) {  // X = index 23
       return {
         rowIndex: i + 1,
         data: rowToData(rows[i]),
@@ -205,7 +207,7 @@ export async function findByRequestId(requestId: string): Promise<{ rowIndex: nu
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'request!A:W',
+    range: 'request!A:X',
   });
 
   const rows = res.data.values || [];
@@ -223,28 +225,29 @@ export async function findByRequestId(requestId: string): Promise<{ rowIndex: nu
 
 function rowToData(row: string[]): CreditLimitRow {
   return {
-    timestamp: row[0] || '',          // A
-    requestId: row[1] || '',          // B
-    reporterName: row[2] || '',       // C
-    reporterPhone: row[3] || '',      // D
-    fgName: row[4] || '',             // E
-    farmerName: row[5] || '',         // F
-    landSizeVerified: row[6] || '',   // G
-    currentLimit: row[7] || '',       // H
-    requestedTopUp: row[8] || '',     // I
-    creditType: row[9] || '',         // J
-    reason: row[10] || '',            // K
-    soNumber: row[11] || '',          // L
+    timestamp: row[0] || '',               // A
+    requestId: row[1] || '',               // B
+    reporterName: row[2] || '',            // C
+    reporterPhone: row[3] || '',           // D
+    fgName: row[4] || '',                  // E
+    farmerName: row[5] || '',              // F
+    landSizeVerified: row[6] || '',        // G
+    currentLimit: row[7] || '',            // H
+    requestedTopUp: row[8] || '',          // I
+    creditType: row[9] || '',              // J
+    reason: row[10] || '',                 // K
+    soNumber: row[11] || '',               // L
     farmerIncomeAndBusiness: row[12] || '', // M
-    collateralInfo: row[13] || '',    // N
-    docSignedSO: row[14] || '',       // O
-    docFarmerHolding: row[15] || '',  // P
-    docLandOwnership: row[16] || '',  // Q
-    docJaminan: row[17] || '',        // R
-    status: row[18] || '',            // S
-    reviewedBy: row[19] || '',        // T
-    reviewDate: row[20] || '',        // U
-    rejectionReason: row[21] || '',   // V
-    slackMessageTs: row[22] || '',    // W
+    collateralInfo: row[13] || '',         // N
+    docSignedSO: row[14] || '',            // O
+    docFarmerHolding: row[15] || '',       // P
+    docLandOwnership: row[16] || '',       // Q
+    docJaminan: row[17] || '',             // R
+    docSurveyPhotoTM: row[18] || '',       // S ← NEW
+    status: row[19] || '',                 // T (was S/18)
+    reviewedBy: row[20] || '',             // U (was T/19)
+    reviewDate: row[21] || '',             // V (was U/20)
+    rejectionReason: row[22] || '',        // W (was V/21)
+    slackMessageTs: row[23] || '',         // X (was W/22)
   };
 }

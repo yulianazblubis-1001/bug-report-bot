@@ -118,6 +118,9 @@ If Credit Type includes Mechanization (option 2 or 3):
 
 If option 3 (both), collect ALL documents from both Agri Input AND Mechanization.
 
+MANDATORY FOR ALL REQUESTS (any credit type, standard or large farmer):
+- Survey photo with TM — "Kirim *foto survey dengan TM* (foto TM bersama petani di lokasi lahan). WAJIB."
+
 ${isLargeFarmer ? `LARGE FARMER — ADDITIONAL MANDATORY FIELDS:
 These are REQUIRED for Large Farmer requests:
 - Sumber Pendapatan Petani (Farmer Income Sources) — "Sebutkan sumber pendapatan petani. Contoh: Utama (Padi) - IDR 45jt/musim, Sampingan (Palawija) - IDR 5jt, Ternak - 3 Sapi/Aset 30jt, Usaha Luar Tani - warung IDR 2jt/bulan, Aset Likuidasi - Honda Vario 2023"
@@ -148,17 +151,17 @@ Phase 1 — Text Data (ask these first):
 
 Phase 2 — Documents (only after ALL Phase 1 is complete):
 After credit type is known, ask for documents ONE BY ONE in this exact order. Each time the user sends a photo, mark that specific document as received in documentsReceived and ask for the NEXT one.
-- If Agri Input: SO Number (text) → ask "Kirim foto 1: SO yang sudah ditandatangani Farmer" → ask "Kirim foto 2: Farmer memegang SO yang sudah ditandatangani"
-- If Mechanization: ask "Kirim foto 1: Surat Permohonan yang sudah ditandatangani Farmer" → ask "Kirim foto 2: Farmer memegang Surat Permohonan yang sudah ditandatangani"
-- If Both: collect ALL documents from both types, one at a time
-Track which document each photo corresponds to based on the order you asked for them. The FIRST photo after asking for "foto 1" is that document, the NEXT photo is "foto 2", etc.
+- If Agri Input: SO Number (text) → ask "Kirim foto 1: SO yang sudah ditandatangani Farmer" → ask "Kirim foto 2: Farmer memegang SO yang sudah ditandatangani" → ask "Kirim foto survey dengan TM (foto TM bersama petani di lokasi lahan)"
+- If Mechanization: ask "Kirim foto 1: Surat Permohonan yang sudah ditandatangani Farmer" → ask "Kirim foto 2: Farmer memegang Surat Permohonan yang sudah ditandatangani" → ask "Kirim foto survey dengan TM (foto TM bersama petani di lokasi lahan)"
+- If Both: collect ALL documents from both types, one at a time, then ask for the TM survey photo last
+Track which document each photo corresponds to based on the order you asked for them. The FIRST photo after asking for "foto 1" is that document, the NEXT photo is "foto 2", etc. The TM survey photo is ALWAYS the last photo requested.
 ${isLargeFarmer ? `
 Phase 3 — Large Farmer Additional (only after Phase 2):
 - Sumber Pendapatan Petani (text)
 - Potensi Bisnis (text)
 - Collateral Type (choice)
 - Credit Limit Request Amount (text)
-- Then documents: Land ownership proof → Collateral Photo → Collateral Certificate` : ''}
+- Then documents: Land ownership proof → Collateral Photo → Collateral Certificate → Survey photo with TM` : ''}
 
 IMPORTANT: If the user sends all text data in one message, that is fine — extract it all. But when asking follow-ups, always follow the phase order above. Never ask for a photo before all text fields are collected.
 
@@ -204,7 +207,8 @@ Return ONLY valid JSON (no markdown, no backticks):
       "farmerHoldingRequestLetter": true/false,
       "landOwnershipProof": true/false,
       "collateralPhoto": true/false,
-      "collateralCertificate": true/false
+      "collateralCertificate": true/false,
+      "surveyPhotoWithTM": true/false
     },
     "category": "Credit Limit Top Up",
     "originalText": "exact original text as user typed it, concatenated"

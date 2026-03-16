@@ -15,17 +15,18 @@
  *    - Event type: On edit
  * 9. Save and authorize when prompted
  *
- * COLUMN STRUCTURE (A-W, 23 columns):
+ * COLUMN STRUCTURE (A-X, 24 columns):
  * A: Timestamp, B: Request ID, C: Reporter Name, D: Reporter Phone,
  * E: FG, F: Farmer, G: Land Size, H: Current Limit, I: Requested Top-Up,
  * J: Credit Type, K: Reason, L: SO Number,
  * M: Farmer Income & Business, N: Jaminan Info,
  * O: Doc Signed SO/Letter, P: Doc Farmer Holding,
  * Q: Doc Land Ownership, R: Doc Jaminan,
- * S: Status, T: Reviewed By, U: Review Date, V: Rejection Reason, W: Slack TS
+ * S: Doc Survey Photo with TM,
+ * T: Status, U: Reviewed By, V: Review Date, W: Rejection Reason, X: Slack TS
  *
  * HOW IT WORKS:
- * When column S (Status) is changed to "APPROVED" or "REJECTED",
+ * When column T (Status) is changed to "APPROVED" or "REJECTED",
  * this script sends a POST request to your bot's /sheet-update endpoint
  */
 
@@ -37,8 +38,8 @@ function onSheetEdit(e) {
     if (sheet.getName() !== 'request') return;
     
     var col = range.getColumn();
-    // Column S = 19 (Status column)
-    if (col !== 19) return;
+    // Column T = 20 (Status column, was S = 19 before adding column S for doc)
+    if (col !== 20) return;
     
     var newValue = (range.getValue() || '').toString().trim().toUpperCase();
     
@@ -47,18 +48,18 @@ function onSheetEdit(e) {
     var row = range.getRow();
     if (row <= 1) return; // Skip header row
     
-    var rowData = sheet.getRange(row, 1, 1, 23).getValues()[0];
-    var slackTsCell = sheet.getRange(row, 23).getDisplayValue();
+    var rowData = sheet.getRange(row, 1, 1, 24).getValues()[0];
+    var slackTsCell = sheet.getRange(row, 24).getDisplayValue(); // Column X = 24
     
     var payload = {
-      requestId: (rowData[1] || '').toString(),  // Column B
-      status: newValue,                           // Column S
-      reviewedBy: (rowData[19] || '').toString(), // Column T
-      rejectionReason: (rowData[21] || '').toString(), // Column V
-      slackTs: slackTsCell || '',                 // Column W — use getDisplayValue to preserve precision
-      reporterPhone: (rowData[3] || '').toString(),    // Column D
-      reporterName: (rowData[2] || '').toString(),     // Column C
-      farmerName: (rowData[5] || '').toString(),       // Column F
+      requestId: (rowData[1] || '').toString(),   // Column B (index 1)
+      status: newValue,                            // Column T (index 19)
+      reviewedBy: (rowData[20] || '').toString(),  // Column U (index 20)
+      rejectionReason: (rowData[22] || '').toString(), // Column W (index 22)
+      slackTs: slackTsCell || '',                  // Column X — use getDisplayValue to preserve precision
+      reporterPhone: (rowData[3] || '').toString(),    // Column D (index 3)
+      reporterName: (rowData[2] || '').toString(),     // Column C (index 2)
+      farmerName: (rowData[5] || '').toString(),       // Column F (index 5)
     };
     
     Logger.log('Payload: ' + JSON.stringify(payload));

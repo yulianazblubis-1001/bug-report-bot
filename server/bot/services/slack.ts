@@ -427,6 +427,10 @@ export function buildCreditLimitBlocks(session: BotSession, data: Record<string,
     if (data.docCollateralCertificate) docCount++;
   }
 
+  const hasSurveyPhoto = !!(data.docSurveyPhotoTM);
+  docList += `• Survey photo with TM ${hasSurveyPhoto ? '✅' : '❌'}\n`;
+  if (hasSurveyPhoto) docCount++;
+
   blocks.push({
     type: 'section',
     text: { type: 'mrkdwn', text: `*📎 Documents attached: ${docCount} files*\n${docList}` },
@@ -446,7 +450,7 @@ export function buildCreditLimitBlocks(session: BotSession, data: Record<string,
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `${mentions} — Please review this request in the <${process.env.GOOGLE_SHEETS_ID ? `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEETS_ID}` : 'Google Sheet'}|Credit Limit Sheet>.\n• Update column S (Status) to *APPROVED* or *REJECTED*\n• If rejected, fill column V (Rejection Reason)`,
+        text: `${mentions} — Please review this request in the <${process.env.GOOGLE_SHEETS_ID ? `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEETS_ID}` : 'Google Sheet'}|Credit Limit Sheet>.\n• Update column T (Status) to *APPROVED* or *REJECTED*\n• If rejected, fill column W (Rejection Reason)`,
       },
     });
   }

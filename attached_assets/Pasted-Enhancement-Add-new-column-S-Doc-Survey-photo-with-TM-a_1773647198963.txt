@@ -1,0 +1,66 @@
+Enhancement: Add new column S "Doc: Survey photo with TM" and shift all columns after it
+What to do:
+Add a new document column S in the Google Sheet for "Survey photo with TM". This photo should be uploaded to Google Drive and saved as a Drive link, same as other document columns. All columns after S need to shift right by 1.
+Column mapping change:
+BEFORE (old):                    AFTER (new):
+O: Doc: Signed SO/Request Letter O: Doc: Signed SO/Request Letter  (same)
+P: Doc: Farmer Holding Document  P: Doc: Farmer Holding Document   (same)
+Q: Doc: Land Ownership Proof     Q: Doc: Land Ownership Proof      (same)
+R: Doc: Dokumen Jaminan          R: Doc: Dokumen Jaminan           (same)
+S: Status                        S: Doc: Survey photo with TM      ← NEW
+T: Reviewed By                   T: Status                         (was S)
+U: Review Date                   U: Reviewed By                    (was T)
+V: Rejection Reason              V: Review Date                    (was U)
+W: Slack Message TS              W: Rejection Reason               (was V)
+X: Approval By AOM               X: Slack Message TS               (was W)
+                                  Y: Approval By AOM               (was X)
+All code changes needed:
+1. Google Sheets — update the row array when appending a new credit limit request:
+Find the function that builds the row array for appendCreditLimitRow (or wherever the row values are pushed to the sheet). Insert the new column S value (survey photo with TM Drive link) after column R (Dokumen Jaminan), before the Status column.
+typescript// Old row order:
+// [..., docDokumenJaminan, status, reviewedBy, reviewDate, rejectionReason, slackTs, approvalByAOM]
+
+// New row order:
+// [..., docDokumenJaminan, docSurveyPhotoTM, status, reviewedBy, reviewDate, rejectionReason, slackTs, approvalByAOM]
+For new requests, docSurveyPhotoTM should be empty string '' initially — the TM photo may be submitted later or collected during the flow.
+2. Update ALL column index references in the codebase:
+Search the entire codebase for any hardcoded column letters or index numbers that reference columns S through X. Every single one needs to shift by +1. Common places to check:
+typescript// STATUS column: was S (index 18), now T (index 19)
+// Find: column S, index 18, 'S', range including S
+// Replace with: column T, index 19, 'T'
+
+// REVIEWED BY: was T (index 19), now U (index 20)
+// REVIEW DATE: was U (index 20), now V (index 21)
+// REJECTION REASON: was V (index 21), now W (index 22)
+// SLACK MESSAGE TS: was W (index 22), now X (index 23)
+// APPROVAL BY AOM: was X (index 23), now Y (index 24)
+Search for these patterns across ALL files:
+
+Any reference to row[18], row[19], row[20], row[21], row[22], row[23] — shift each +1
+Any Google Sheets range like 'request!S:S' or 'request!T:T' etc — shift letter +1
+The /sheet-update webhook handler that reads slackTs — it was reading from column W (index 22), now it must read from column X (index 23)
+The status update function — was writing to column S, now must write to column T
+The rejection reason — was column V, now column W
+The Slack message TS — was column W, now column X
+
+3. WhatsApp flow — collect the TM survey photo:
+In the credit limit flow, add a new step to collect the survey photo with TM. Add it after collecting other documents (after CL_TYPE2_DOCS or wherever collateral docs are collected):
+typescript// New step: CL_TYPE2_TM_PHOTO (or CL_TYPE1_TM_PHOTO for Type 1)
+// Ask: "Kirim *foto survey dengan TM* (foto TM bersama petani di lokasi lahan)."
+// Store the uploaded Drive URL in session.creditLimitData.docSurveyPhotoTM
+For Type 1 (top-up < 2.5 Ha): also add this step — the approval matrix requires proof of physical visit by JA/TM for all requests.
+For Type 2 (large farmer > 2.5 Ha): this is mandatory — the SOP requires physical visit proof.
+4. Slack message blocks — add TM photo link:
+In the function that builds the Slack message blocks for the credit limit request, add the TM survey photo link to the document section:
+typescript// In the docs section of the Slack blocks, add:
+{ type: 'mrkdwn', text: `• Survey photo with TM: ${d.docSurveyPhotoTM ? '✅' : '❌'}` }
+5. Upload to Google Drive — same as other docs:
+The TM survey photo must go through the same flow as other documents: download from WATI → upload to Google Drive → save Drive link in the sheet. Use the same uploadToGDrive() function that other document columns use. Name the file: CL-{refId}-tm-survey.jpg
+
+Edge cases:
+
+TM photo sent separately after submission — if the user forgets the TM photo and sends it later, the bot should recognize it and update column S in the existing row. Add a way to update docs post-submission (e.g., user replies to the confirmation message with a photo).
+Column range in Apps Script webhook — if your Google Apps Script reads a fixed range (like A:X), update it to A:Y to include the new column.
+Existing row 2 data — the existing approved request in row 2 will have data shifted wrong if you manually insert a column in the sheet. Either: (a) manually fix row 2 by inserting column S in the sheet UI first, or (b) clear row 2 and re-enter it.
+The findRefIdBySlackTs function — this reads Slack TS to find the row. It was looking at column index 22 (W). Now it must look at index 23 (X). If you miss this, the approve/reject flow will break because it can't find the matching row.
+Status dropdown validation — if column S had a dropdown data validation for Status, move that validation to column T after the column shift.

@@ -574,6 +574,7 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
     if (isLargeFarmer) {
       docLabels.push('docLandOwnership', 'docCollateralPhoto', 'docCollateralCertificate');
     }
+    docLabels.push('docSurveyPhotoTM');
 
     for (let i = 0; i < session.mediaUrls.length && i < docLabels.length; i++) {
       const mediaUrl = session.mediaUrls[i];
@@ -605,6 +606,7 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
       docLandOwnership: driveUrls.docLandOwnership || '',
       docCollateralPhoto: driveUrls.docCollateralPhoto || '',
       docCollateralCertificate: driveUrls.docCollateralCertificate || '',
+      docSurveyPhotoTM: driveUrls.docSurveyPhotoTM || '',
     };
 
     const slackResult = await slack.postCreditLimitToSlack(session, slackData, (ts, channel) => {
@@ -652,6 +654,7 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
       docFarmerHolding: docFarmerHolding,
       docLandOwnership: driveUrls.docLandOwnership || '',
       docJaminan: driveUrls.docCollateralPhoto || '',
+      docSurveyPhotoTM: driveUrls.docSurveyPhotoTM || '',
       status: 'PENDING',
       reviewedBy: '',
       reviewDate: '',
