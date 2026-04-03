@@ -79,6 +79,99 @@ const INITIAL_FILES: FormFiles = {
   docSurveyPhotoTM: [],
 };
 
+function ComboboxField({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+  disabled,
+  error,
+  required,
+  testId,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder?: string;
+  disabled?: boolean;
+  error?: string;
+  required?: boolean;
+  testId?: string;
+}) {
+  const [inputValue, setInputValue] = useState(value);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    setInputValue(value);
+  }, [value]);
+
+  const filtered =
+    inputValue.length >= 3
+      ? options.filter((o) => o.toLowerCase().includes(inputValue.toLowerCase()))
+      : [];
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const v = e.target.value;
+    setInputValue(v);
+    onChange("");
+    setOpen(v.length >= 3 && options.length > 0);
+  }
+
+  function handleSelect(opt: string) {
+    setInputValue(opt);
+    onChange(opt);
+    setOpen(false);
+  }
+
+  function handleBlur() {
+    setTimeout(() => setOpen(false), 150);
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <label className="text-sm font-medium">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <div className="relative">
+        <input
+          data-testid={testId}
+          type="text"
+          value={inputValue}
+          onChange={handleChange}
+          onFocus={() => { if (inputValue.length >= 3 && filtered.length > 0) setOpen(true); }}
+          onBlur={handleBlur}
+          disabled={disabled}
+          placeholder={
+            disabled ? "— Pilih FG dulu —" : (placeholder ?? "Ketik min. 3 huruf…")
+          }
+          className="w-full p-2.5 bg-background border rounded-md text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+        />
+        {open && filtered.length > 0 && (
+          <ul className="absolute z-50 w-full mt-1 max-h-60 overflow-y-auto bg-background border rounded-md shadow-lg">
+            {filtered.map((opt) => (
+              <li
+                key={opt}
+                onMouseDown={() => handleSelect(opt)}
+                className="px-3 py-2 text-sm cursor-pointer hover:bg-muted"
+              >
+                {opt}
+              </li>
+            ))}
+          </ul>
+        )}
+        {open && inputValue.length >= 3 && filtered.length === 0 && (
+          <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg px-3 py-2 text-sm text-muted-foreground">
+            Tidak ada hasil untuk "{inputValue}"
+          </div>
+        )}
+      </div>
+      {error && <p className="text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}
+
 function FileUploadField({
   label,
   fieldName,
@@ -494,50 +587,26 @@ export default function CreditLimitForm() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">
-                      Farmer Group (FG) <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      data-testid="select-fg-name"
-                      value={form.fgName}
-                      onChange={(e) => updateForm("fgName", e.target.value)}
-                      className="w-full p-2.5 bg-background border rounded-md text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                    >
-                      <option value="">
-                        {fgOptions.length === 0 ? "Loading..." : "— Pilih FG —"}
-                      </option>
-                      {fgOptions.map((fg) => (
-                        <option key={fg} value={fg}>{fg}</option>
-                      ))}
-                    </select>
-                    {errors.fgName && (
-                      <p className="text-xs text-red-500">{errors.fgName}</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">
-                      Farmer Name <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      data-testid="select-farmer-name"
-                      value={form.farmerName}
-                      onChange={(e) => updateForm("farmerName", e.target.value)}
-                      disabled={!form.fgName}
-                      className="w-full p-2.5 bg-background border rounded-md text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <option value="">
-                        {!form.fgName ? "— Pilih FG dulu —" : "— Pilih Petani —"}
-                      </option>
-                      {farmerOptions.map((name) => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </select>
-                    {errors.farmerName && (
-                      <p className="text-xs text-red-500">{errors.farmerName}</p>
-                    )}
-                  </div>
+                  <ComboboxField
+                    label="Farmer Group (FG)"
+                    value={form.fgName}
+                    onChange={(v) => updateForm("fgName", v)}
+                    options={fgOptions}
+                    placeholder={fgOptions.length === 0 ? "Loading…" : "Ketik min. 3 huruf FG…"}
+                    error={errors.fgName}
+                    required
+                    testId="input-fg-name"
+                  />
+                  <ComboboxField
+                    label="Farmer Name"
+                    value={form.farmerName}
+                    onChange={(v) => updateForm("farmerName", v)}
+                    options={farmerOptions}
+                    disabled={!form.fgName}
+                    error={errors.farmerName}
+                    required
+                    testId="input-farmer-name"
+                  />
                 </div>
 
                 <InputField
