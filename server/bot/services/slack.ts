@@ -443,17 +443,20 @@ export function buildCreditLimitBlocks(session: BotSession, data: Record<string,
     text: { type: 'mrkdwn', text: `*⏳ Status: PENDING APPROVAL*` },
   });
 
+  const HARDCODED_OPS_IDS = ['U09RYSST8NQ', 'U0AE7GZRKHU', 'U08D51HMM5L', 'U07QMNFSH18'];
   const mentionOps = process.env.SLACK_MENTION_OPS;
-  if (mentionOps) {
-    const mentions = mentionOps.split(',').map(id => `<@${id.trim().replace(/^@/, '')}>`).join(' ');
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `${mentions} — Please review this request in the <${process.env.GOOGLE_SHEETS_ID ? `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEETS_ID}` : 'Google Sheet'}|Credit Limit Sheet>.\n• Update column T (Status) to *APPROVED* or *REJECTED*\n• If rejected, fill column W (Rejection Reason)`,
-      },
-    });
-  }
+  const rawIds = mentionOps
+    ? mentionOps.split(',').map(id => id.trim().replace(/^@/, '')).filter(id => id.startsWith('U'))
+    : [];
+  const mentionIds = rawIds.length > 0 ? rawIds : HARDCODED_OPS_IDS;
+  const mentions = mentionIds.map(id => `<@${id}>`).join(' ');
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `${mentions} — Please review this request in the <${process.env.GOOGLE_SHEETS_ID ? `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEETS_ID}` : 'Google Sheet'}|Credit Limit Sheet>.\n• Update column T (Status) to *APPROVED* or *REJECTED*\n• If rejected, fill column W (Rejection Reason)`,
+    },
+  });
 
   blocks.push({
     type: 'context',
