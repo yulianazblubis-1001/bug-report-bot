@@ -28,7 +28,7 @@ interface FarmerRecord {
 type CreditLimitType = "standard" | "largeFarmer";
 type CreditType = "Agri Input" | "Mechanization" | "Agri Input + Mechanization";
 
-interface FormData {
+interface FormState {
   reporterPhone: string;
   creditLimitType: CreditLimitType;
   fgName: string;
@@ -54,7 +54,7 @@ interface FormFiles {
   docSurveyPhotoTM: File[];
 }
 
-const INITIAL_FORM: FormData = {
+const INITIAL_FORM: FormState = {
   reporterPhone: "",
   creditLimitType: "standard",
   fgName: "",
@@ -115,7 +115,8 @@ function ComboboxField({
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const v = e.target.value;
     setInputValue(v);
-    onChange("");
+    // Only clear the form value when the user types something different from the current selection
+    if (v !== value) onChange("");
     setOpen(v.length >= 3 && options.length > 0);
   }
 
@@ -126,7 +127,19 @@ function ComboboxField({
   }
 
   function handleBlur() {
-    setTimeout(() => setOpen(false), 150);
+    setTimeout(() => {
+      setOpen(false);
+      // Auto-select when the typed text is an exact case-insensitive match
+      if (!value && inputValue.trim().length > 0) {
+        const exact = options.find(
+          (o) => o.toLowerCase() === inputValue.trim().toLowerCase()
+        );
+        if (exact) {
+          setInputValue(exact);
+          onChange(exact);
+        }
+      }
+    }, 150);
   }
 
   return (
@@ -246,7 +259,7 @@ function FileUploadField({
 }
 
 export default function CreditLimitForm() {
-  const [form, setForm] = useState<FormData>(INITIAL_FORM);
+  const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [files, setFiles] = useState<FormFiles>(INITIAL_FILES);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; requestId?: string; error?: string; code?: string; logId?: string; warnings?: string[] } | null>(null);
