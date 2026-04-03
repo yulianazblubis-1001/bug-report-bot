@@ -379,7 +379,7 @@ export async function registerRoutes(
             for (let attempt = 1; attempt <= 2; attempt++) {
               try {
                 console.log(`[Form][${logId}] Uploading ${fileName} (${(file.size / 1024).toFixed(0)} KB) attempt ${attempt}...`);
-                driveUrl = await googleDrive.uploadToDrive(file.buffer, fileName, file.mimetype);
+                driveUrl = await googleDrive.uploadToDrive(file.buffer, fileName, file.mimetype, requestId);
                 console.log(`[Form][${logId}] ✅ ${fileName} → ${driveUrl}`);
                 break;
               } catch (err: any) {
