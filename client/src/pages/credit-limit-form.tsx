@@ -20,6 +20,11 @@ interface Agronomist {
   area: string;
 }
 
+interface FarmerRecord {
+  fgName: string;
+  farmerName: string;
+}
+
 type CreditLimitType = "standard" | "largeFarmer";
 type CreditType = "Agri Input" | "Mechanization" | "Agri Input + Mechanization";
 
@@ -160,6 +165,16 @@ export default function CreditLimitForm() {
     staleTime: 60000,
   });
 
+  const { data: farmerDb = [] } = useQuery<FarmerRecord[]>({
+    queryKey: ["/api/farmers"],
+    staleTime: 300000,
+  });
+
+  const fgOptions = [...new Set(farmerDb.map((f) => f.fgName))].sort();
+  const farmerOptions = form.fgName
+    ? farmerDb.filter((f) => f.fgName === form.fgName).map((f) => f.farmerName).sort()
+    : [];
+
   // Auto-fill from URL params (sent by WhatsApp bot)
   useEffect(() => {
     if (prefilled || !agronomists) return;
@@ -187,8 +202,12 @@ export default function CreditLimitForm() {
   const includesMechanization = form.creditType.includes("Mechanization");
 
   function updateForm(field: keyof FormData, value: string) {
-    setForm((prev) => ({ ...prev, [field]: value }));
-    // Clear error when user types
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      // Clear farmer when FG changes
+      if (field === "fgName") next.farmerName = "";
+      return next;
+    });
     if (errors[field]) {
       setErrors((prev) => {
         const next = { ...prev };
@@ -475,22 +494,50 @@ export default function CreditLimitForm() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <InputField
-                    label="Farmer Group (FG)"
-                    value={form.fgName}
-                    onChange={(v) => updateForm("fgName", v)}
-                    error={errors.fgName}
-                    placeholder="e.g. FG Makmur Jaya"
-                    required
-                  />
-                  <InputField
-                    label="Farmer Name"
-                    value={form.farmerName}
-                    onChange={(v) => updateForm("farmerName", v)}
-                    error={errors.farmerName}
-                    placeholder="e.g. Pak Slamet"
-                    required
-                  />
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">
+                      Farmer Group (FG) <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      data-testid="select-fg-name"
+                      value={form.fgName}
+                      onChange={(e) => updateForm("fgName", e.target.value)}
+                      className="w-full p-2.5 bg-background border rounded-md text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    >
+                      <option value="">
+                        {fgOptions.length === 0 ? "Loading..." : "— Pilih FG —"}
+                      </option>
+                      {fgOptions.map((fg) => (
+                        <option key={fg} value={fg}>{fg}</option>
+                      ))}
+                    </select>
+                    {errors.fgName && (
+                      <p className="text-xs text-red-500">{errors.fgName}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">
+                      Farmer Name <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      data-testid="select-farmer-name"
+                      value={form.farmerName}
+                      onChange={(e) => updateForm("farmerName", e.target.value)}
+                      disabled={!form.fgName}
+                      className="w-full p-2.5 bg-background border rounded-md text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <option value="">
+                        {!form.fgName ? "— Pilih FG dulu —" : "— Pilih Petani —"}
+                      </option>
+                      {farmerOptions.map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                    {errors.farmerName && (
+                      <p className="text-xs text-red-500">{errors.farmerName}</p>
+                    )}
+                  </div>
                 </div>
 
                 <InputField

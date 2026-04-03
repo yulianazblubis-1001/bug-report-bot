@@ -251,3 +251,35 @@ function rowToData(row: string[]): CreditLimitRow {
     slackMessageTs: row[23] || '',         // X (was W/22)
   };
 }
+export interface FarmerRecord {
+  fgName: string;
+  farmerName: string;
+}
+
+export async function getFarmerDatabase(): Promise<FarmerRecord[]> {
+  const sheets = await getUncachableGoogleSheetClient();
+  const spreadsheetId = getSheetId();
+
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'Farmer Database!A:Z',
+  });
+
+  const rows = response.data.values || [];
+  if (rows.length < 2) return [];
+
+  const headers = rows[0].map((h: string) => h.toLowerCase().trim());
+  const fgCol     = headers.indexOf('fg_name');
+  const farmerCol = headers.indexOf('farmer_name');
+
+  if (fgCol === -1 || farmerCol === -1) {
+    throw new Error(`Column not found. Headers found: ${headers.join(', ')}`);
+  }
+
+  return rows.slice(1)
+    .filter((row: string[]) => row[fgCol]?.trim() && row[farmerCol]?.trim())
+    .map((row: string[]) => ({
+      fgName:     row[fgCol].trim(),
+      farmerName: row[farmerCol].trim(),
+    }));
+}

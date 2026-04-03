@@ -295,6 +295,17 @@ export async function registerRoutes(
     res.json(list);
   });
 
+  // GET farmer database for cascading FG → Farmer dropdowns
+  app.get("/api/farmers", async (_req, res) => {
+    try {
+      const farmers = await googleSheets.getFarmerDatabase();
+      res.json(farmers);
+    } catch (err: any) {
+      console.error('[API] /api/farmers error:', err.message);
+      res.status(500).json({ error: 'Failed to load farmer database', details: err.message });
+    }
+  });
+
   // File upload with multer (memory storage)
   const upload = multer({
     storage: multer.memoryStorage(),
@@ -368,7 +379,7 @@ export async function registerRoutes(
             for (let attempt = 1; attempt <= 2; attempt++) {
               try {
                 console.log(`[Form][${logId}] Uploading ${fileName} (${(file.size / 1024).toFixed(0)} KB) attempt ${attempt}...`);
-                driveUrl = await googleDrive.uploadToDrive(file.buffer, fileName, file.mimetype, requestId)
+                driveUrl = await googleDrive.uploadToDrive(file.buffer, fileName, file.mimetype);
                 console.log(`[Form][${logId}] ✅ ${fileName} → ${driveUrl}`);
                 break;
               } catch (err: any) {
