@@ -627,7 +627,7 @@ export default function CreditLimitForm() {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium">
-                  {isLargeFarmer ? "5" : "4"}. Documents
+                  4. Documents
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -644,23 +644,18 @@ export default function CreditLimitForm() {
                   onFilesChange={updateFiles}
                 />
 
-                {isLargeFarmer && (
-                  <>
-                    <Separator />
-                    <FileUploadField
-                      label="Land Ownership Proof (Bukti kepemilikan lahan)"
-                      fieldName="docLandOwnership"
-                      fileList={files.docLandOwnership}
-                      onFilesChange={updateFiles}
-                    />
-                    <FileUploadField
-                      label="Dokumen Jaminan (Foto/scan dokumen jaminan)"
-                      fieldName="docJaminan"
-                      fileList={files.docJaminan}
-                      onFilesChange={updateFiles}
-                    />
-                  </>
-                )}
+                <FileUploadField
+                  label="Land Ownership Proof (Bukti kepemilikan lahan)"
+                  fieldName="docLandOwnership"
+                  fileList={files.docLandOwnership}
+                  onFilesChange={updateFiles}
+                />
+                <FileUploadField
+                  label="Dokumen Jaminan (Foto/scan dokumen jaminan)"
+                  fieldName="docJaminan"
+                  fileList={files.docJaminan}
+                  onFilesChange={updateFiles}
+                />
 
                 <Separator />
                 <FileUploadField
