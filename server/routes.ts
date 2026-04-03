@@ -162,7 +162,7 @@ export async function registerRoutes(
         console.log(`[Slack Events] Found mapping for ${mapping.senderName} (${mapping.phoneNumber})`);
 
         if (mapping.reportType === 'creditTopUp') {
-          if (reaction === "white_check_mark" || reaction === "done") {
+          if (reaction === "done") {
             try {
               if (mapping.requestId) {
                 await googleSheets.updateStatus(mapping.requestId, 'RESOLVED', 'Engineer', '');
@@ -239,7 +239,7 @@ export async function registerRoutes(
         if (creditLimitChannel) {
           if (slackTs) {
             console.log(`[Sheet Update] Using slackTs="${slackTs}" for Slack thread reply`);
-            const emoji = status === 'APPROVED' ? 'hourglass_flowing_sand' : 'x';
+            const emoji = status === 'APPROVED' ? 'white_check_mark' : 'x';
             try {
               await addSlackReaction(creditLimitChannel, slackTs, emoji);
             } catch (reactionErr: any) {
