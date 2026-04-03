@@ -239,7 +239,7 @@ export async function registerRoutes(
         if (creditLimitChannel) {
           if (slackTs) {
             console.log(`[Sheet Update] Using slackTs="${slackTs}" for Slack thread reply`);
-            const emoji = status === 'APPROVED' ? 'white_check_mark' : 'x';
+            const emoji = status === 'APPROVED' ? 'hourglass_flowing_sand' : 'x';
             try {
               await addSlackReaction(creditLimitChannel, slackTs, emoji);
             } catch (reactionErr: any) {
