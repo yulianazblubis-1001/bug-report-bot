@@ -7,6 +7,9 @@ let pool: pg.Pool | null = null;
 function getPool(): pg.Pool {
   if (!pool) {
     pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    pool.on('error', (err) => {
+      console.error('[SlackMapDB] Pool error (connection will be retried):', err.message);
+    });
   }
   return pool;
 }
