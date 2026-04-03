@@ -50,22 +50,59 @@ async function getUncachableDriveClient() {
   return google.drive({ version: 'v3', auth: oauth2Client });
 }
 
+// Create or reuse a subfolder inside the parent folder
+async function getOrCreateSubfolder(
+  drive: any,
+  parentFolderId: string,
+  folderName: string
+): Promise<string> {
+  // Check if subfolder already exists (avoid duplicates on retry)
+  const search = await drive.files.list({
+    q: `'${parentFolderId}' in parents and name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    fields: 'files(id)',
+  });
+
+  if (search.data.files?.length > 0) {
+    console.log(`[Google Drive] Reusing subfolder: ${folderName}`);
+    return search.data.files[0].id;
+  }
+
+  // Create new subfolder
+  const folder = await drive.files.create({
+    requestBody: {
+      name: folderName,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentFolderId],
+    },
+    fields: 'id',
+  });
+
+  console.log(`[Google Drive] Created subfolder: ${folderName}`);
+  return folder.data.id!;
+}
+
 export async function uploadToDrive(
   fileBuffer: Buffer,
   fileName: string,
-  mimeType: string
+  mimeType: string,
+  requestId?: string
 ): Promise<string> {
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
   if (!folderId) throw new Error('GOOGLE_DRIVE_FOLDER_ID not set');
 
   const drive = await getUncachableDriveClient();
 
+  // If requestId provided, upload into a subfolder named after the request
+  const targetFolderId = requestId
+    ? await getOrCreateSubfolder(drive, folderId, requestId)
+    : folderId;
+
   const stream = Readable.from(fileBuffer);
 
   const uploadRes = await drive.files.create({
     requestBody: {
       name: fileName,
-      parents: [folderId],
+      parents: [targetFolderId],
     },
     media: {
       mimeType,
@@ -118,7 +155,6 @@ export async function downloadFromWati(mediaUrl: string): Promise<{ buffer: Buff
 
   const buffer = Buffer.from(response.data);
   const serverContentType = response.headers['content-type'] || 'application/octet-stream';
-
   const ext = getFileExtension(mediaUrl);
   const mimeType = getMimeType(ext, serverContentType);
 
@@ -131,7 +167,6 @@ function getFileExtension(url: string): string {
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) return ext;
   if (['mp4', 'mov', 'avi', 'webm', 'mkv'].includes(ext)) return ext;
   if (['pdf', 'doc', 'docx', 'xls', 'xlsx'].includes(ext)) return ext;
-
   const fileNameMatch = url.match(/fileName=.*?\.(\w+)/i);
   if (fileNameMatch) {
     const parsed = fileNameMatch[1].toLowerCase();
@@ -139,7 +174,6 @@ function getFileExtension(url: string): string {
       return parsed;
     }
   }
-
   return 'jpg';
 }
 
