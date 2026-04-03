@@ -67,9 +67,8 @@ Balas 1 atau 2.
 _(Choose type: 1 for Standard, 2 for Large Farmer)_`;
 
 function getCreditLimitFormMsg(phoneNumber: string, creditType: string): string {
-  const baseUrl = process.env.REPLIT_DEV_DOMAIN
-    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-    : process.env.APP_URL || 'https://ag-wa-official.replit.app';
+  // APP_URL takes priority — set this to your production URL in Replit Secrets
+  const baseUrl = process.env.APP_URL || 'https://bug-report-bot.replit.app';
   const formUrl = `${baseUrl}/credit-limit?phone=${phoneNumber}&type=${creditType}`;
 
   return `🏦 *Credit Limit Top Up*
