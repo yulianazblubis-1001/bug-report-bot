@@ -42,11 +42,11 @@ interface FormData {
 }
 
 interface FormFiles {
-  docSignedSO: File | null;
-  docFarmerHolding: File | null;
-  docLandOwnership: File | null;
-  docJaminan: File | null;
-  docSurveyPhotoTM: File | null;
+  docSignedSO: File[];
+  docFarmerHolding: File[];
+  docLandOwnership: File[];
+  docJaminan: File[];
+  docSurveyPhotoTM: File[];
 }
 
 const INITIAL_FORM: FormData = {
@@ -67,71 +67,81 @@ const INITIAL_FORM: FormData = {
 };
 
 const INITIAL_FILES: FormFiles = {
-  docSignedSO: null,
-  docFarmerHolding: null,
-  docLandOwnership: null,
-  docJaminan: null,
-  docSurveyPhotoTM: null,
+  docSignedSO: [],
+  docFarmerHolding: [],
+  docLandOwnership: [],
+  docJaminan: [],
+  docSurveyPhotoTM: [],
 };
 
 function FileUploadField({
   label,
   fieldName,
-  file,
-  onFileChange,
+  fileList,
+  onFilesChange,
   required,
 }: {
   label: string;
   fieldName: keyof FormFiles;
-  file: File | null;
-  onFileChange: (field: keyof FormFiles, file: File | null) => void;
+  fileList: File[];
+  onFilesChange: (field: keyof FormFiles, files: File[]) => void;
   required?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+
+  function addFiles(newFiles: FileList | null) {
+    if (!newFiles) return;
+    const combined = [...fileList, ...Array.from(newFiles)];
+    onFilesChange(fieldName, combined);
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
+  function removeFile(index: number) {
+    const updated = fileList.filter((_, i) => i !== index);
+    onFilesChange(fieldName, updated);
+  }
 
   return (
     <div className="space-y-1.5">
       <label className="text-sm font-medium">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
-      {file ? (
-        <div className="flex items-center gap-2 p-2.5 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-md">
-          <FileText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-          <span className="text-sm truncate flex-1">{file.name}</span>
-          <span className="text-xs text-muted-foreground">
-            {(file.size / 1024).toFixed(0)} KB
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              onFileChange(fieldName, null);
-              if (inputRef.current) inputRef.current.value = "";
-            }}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded"
-          >
-            <X className="w-3.5 h-3.5 text-red-500" />
-          </button>
-        </div>
-      ) : (
-        <div
-          onClick={() => inputRef.current?.click()}
-          className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-md cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
-        >
-          <Upload className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">
-            Click to upload
-          </span>
+      {fileList.length > 0 && (
+        <div className="space-y-1.5">
+          {fileList.map((file, i) => (
+            <div key={`${file.name}-${i}`} className="flex items-center gap-2 p-2.5 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-md">
+              <FileText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <span className="text-sm truncate flex-1">{file.name}</span>
+              <span className="text-xs text-muted-foreground">
+                {(file.size / 1024).toFixed(0)} KB
+              </span>
+              <button
+                type="button"
+                onClick={() => removeFile(i)}
+                className="p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded"
+              >
+                <X className="w-3.5 h-3.5 text-red-500" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
+      <div
+        onClick={() => inputRef.current?.click()}
+        className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-md cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
+      >
+        <Upload className="w-4 h-4 text-muted-foreground" />
+        <span className="text-sm text-muted-foreground">
+          {fileList.length > 0 ? "Add more files" : "Click to upload"}
+        </span>
+      </div>
       <input
         ref={inputRef}
         type="file"
         accept="image/*,.pdf,.doc,.docx"
+        multiple
         className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0] || null;
-          onFileChange(fieldName, f);
-        }}
+        onChange={(e) => addFiles(e.target.files)}
       />
     </div>
   );
@@ -141,7 +151,7 @@ export default function CreditLimitForm() {
   const [form, setForm] = useState<FormData>(INITIAL_FORM);
   const [files, setFiles] = useState<FormFiles>(INITIAL_FILES);
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{ success: boolean; requestId?: string; error?: string } | null>(null);
+  const [result, setResult] = useState<{ success: boolean; requestId?: string; error?: string; code?: string; logId?: string; warnings?: string[] } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [prefilled, setPrefilled] = useState(false);
 
@@ -188,8 +198,8 @@ export default function CreditLimitForm() {
     }
   }
 
-  function updateFile(field: keyof FormFiles, file: File | null) {
-    setFiles((prev) => ({ ...prev, [field]: file }));
+  function updateFiles(field: keyof FormFiles, fileList: File[]) {
+    setFiles((prev) => ({ ...prev, [field]: fileList }));
   }
 
   function validate(): boolean {
@@ -248,9 +258,13 @@ export default function CreditLimitForm() {
         if (value) formData.append(key, value);
       });
 
-      // Add files
-      Object.entries(files).forEach(([key, file]) => {
-        if (file) formData.append(key, file);
+      // Add files (multiple per category)
+      Object.entries(files).forEach(([key, fileList]) => {
+        if (Array.isArray(fileList)) {
+          fileList.forEach((file: File) => {
+            formData.append(key, file);
+          });
+        }
       });
 
       const res = await fetch("/api/credit-limit/submit", {
@@ -261,12 +275,21 @@ export default function CreditLimitForm() {
       const data = await res.json();
 
       if (res.ok && data.success) {
-        setResult({ success: true, requestId: data.requestId });
-        // Reset form
+        setResult({
+          success: true,
+          requestId: data.requestId,
+          logId: data.logId,
+          warnings: data.warnings,
+        });
         setForm(INITIAL_FORM);
         setFiles(INITIAL_FILES);
       } else {
-        setResult({ success: false, error: data.error || "Something went wrong" });
+        setResult({
+          success: false,
+          error: data.error || "Something went wrong",
+          code: data.code,
+          logId: data.logId,
+        });
       }
     } catch (err: any) {
       setResult({ success: false, error: err.message || "Network error" });
@@ -323,6 +346,14 @@ export default function CreditLimitForm() {
                   <p className="text-sm text-emerald-600 dark:text-emerald-400 mt-1">
                     Ops Excellence team has been notified on Slack. You'll get a WhatsApp message when it's approved or rejected.
                   </p>
+                  {result.warnings && result.warnings.length > 0 && (
+                    <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded text-xs text-amber-700 dark:text-amber-300">
+                      <p className="font-medium">Warnings:</p>
+                      {result.warnings.map((w, i) => (
+                        <p key={i}>• {w}</p>
+                      ))}
+                    </div>
+                  )}
                   <button
                     onClick={handleReset}
                     className="mt-3 text-sm font-medium text-emerald-700 hover:text-emerald-900 dark:text-emerald-300 underline"
@@ -348,6 +379,11 @@ export default function CreditLimitForm() {
                   <p className="text-sm text-red-600 dark:text-red-400 mt-1">
                     {result.error}
                   </p>
+                  {result.code && (
+                    <p className="text-xs text-red-500 dark:text-red-400 mt-1 font-mono">
+                      Error: {result.code} {result.logId && `| Log ID: ${result.logId}`}
+                    </p>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -595,45 +631,18 @@ export default function CreditLimitForm() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {includesAgriInput && (
-                  <>
-                    <FileUploadField
-                      label="Signed SO (SO yang sudah ditandatangani)"
-                      fieldName="docSignedSO"
-                      file={files.docSignedSO}
-                      onFileChange={updateFile}
-                    />
-                    <FileUploadField
-                      label="Farmer Holding SO (Foto farmer pegang SO)"
-                      fieldName="docFarmerHolding"
-                      file={files.docFarmerHolding}
-                      onFileChange={updateFile}
-                    />
-                  </>
-                )}
-
-                {includesMechanization && !includesAgriInput && (
-                  <>
-                    <FileUploadField
-                      label="Signed Request Letter (Surat permohonan)"
-                      fieldName="docSignedSO"
-                      file={files.docSignedSO}
-                      onFileChange={updateFile}
-                    />
-                    <FileUploadField
-                      label="Farmer Holding Request Letter"
-                      fieldName="docFarmerHolding"
-                      file={files.docFarmerHolding}
-                      onFileChange={updateFile}
-                    />
-                  </>
-                )}
-
-                {includesAgriInput && includesMechanization && (
-                  <p className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/20 p-2 rounded-md">
-                    For "Both" type: upload Signed SO above, and Signed Request Letter as the second doc.
-                  </p>
-                )}
+                <FileUploadField
+                  label="Signed SO / Request Letter (SO atau Surat Permohonan yang sudah ditandatangani)"
+                  fieldName="docSignedSO"
+                  fileList={files.docSignedSO}
+                  onFilesChange={updateFiles}
+                />
+                <FileUploadField
+                  label="Farmer Holding Document (Foto farmer pegang dokumen)"
+                  fieldName="docFarmerHolding"
+                  fileList={files.docFarmerHolding}
+                  onFilesChange={updateFiles}
+                />
 
                 {isLargeFarmer && (
                   <>
@@ -641,14 +650,14 @@ export default function CreditLimitForm() {
                     <FileUploadField
                       label="Land Ownership Proof (Bukti kepemilikan lahan)"
                       fieldName="docLandOwnership"
-                      file={files.docLandOwnership}
-                      onFileChange={updateFile}
+                      fileList={files.docLandOwnership}
+                      onFilesChange={updateFiles}
                     />
                     <FileUploadField
-                      label="Collateral Photo (Foto jaminan)"
+                      label="Dokumen Jaminan (Foto/scan dokumen jaminan)"
                       fieldName="docJaminan"
-                      file={files.docJaminan}
-                      onFileChange={updateFile}
+                      fileList={files.docJaminan}
+                      onFilesChange={updateFiles}
                     />
                   </>
                 )}
@@ -657,8 +666,8 @@ export default function CreditLimitForm() {
                 <FileUploadField
                   label="Survey Photo with TM (Foto survey dengan TM)"
                   fieldName="docSurveyPhotoTM"
-                  file={files.docSurveyPhotoTM}
-                  onFileChange={updateFile}
+                  fileList={files.docSurveyPhotoTM}
+                  onFilesChange={updateFiles}
                 />
               </CardContent>
             </Card>

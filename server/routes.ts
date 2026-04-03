@@ -303,54 +303,113 @@ export async function registerRoutes(
 
   // POST credit limit form submission
   app.post("/api/credit-limit/submit", upload.fields([
-    { name: 'docSignedSO', maxCount: 1 },
-    { name: 'docFarmerHolding', maxCount: 1 },
-    { name: 'docLandOwnership', maxCount: 1 },
-    { name: 'docJaminan', maxCount: 1 },
-    { name: 'docSurveyPhotoTM', maxCount: 1 },
+    { name: 'docSignedSO', maxCount: 5 },
+    { name: 'docFarmerHolding', maxCount: 5 },
+    { name: 'docLandOwnership', maxCount: 5 },
+    { name: 'docJaminan', maxCount: 5 },
+    { name: 'docSurveyPhotoTM', maxCount: 5 },
   ]), async (req: any, res: any) => {
+    const startTime = Date.now();
+    const logId = uuidv4().substring(0, 6).toUpperCase();
+
     try {
       const body = req.body;
       const files = req.files || {};
 
-      // Validate required fields
+      console.log(`[Form][${logId}] === NEW SUBMISSION ===`);
+      console.log(`[Form][${logId}] Reporter: ${body.reporterPhone}, Farmer: ${body.farmerName}, Type: ${body.creditLimitType}`);
+
+      // ── STEP 1: Validate required fields ──
       const required = ['reporterPhone', 'fgName', 'farmerName', 'landSizeVerified', 'currentLimit', 'requestedTopUp', 'creditType', 'reason'];
       const missing = required.filter(f => !body[f]);
       if (missing.length > 0) {
-        return res.status(400).json({ error: `Missing fields: ${missing.join(', ')}` });
+        console.warn(`[Form][${logId}] ERR_VALIDATION: Missing fields: ${missing.join(', ')}`);
+        return res.status(400).json({
+          error: `Missing fields: ${missing.join(', ')}`,
+          code: 'ERR_VALIDATION',
+          logId,
+        });
       }
 
-      // Look up reporter profile
+      // ── STEP 2: Verify reporter identity ──
       const profile = lookupProfile(body.reporterPhone);
       if (!profile) {
-        return res.status(403).json({ error: 'Phone number not in whitelist' });
+        console.warn(`[Form][${logId}] ERR_NOT_WHITELISTED: Phone ${body.reporterPhone} not found`);
+        return res.status(403).json({
+          error: 'Phone number not in whitelist. Contact your Territory Manager.',
+          code: 'ERR_NOT_WHITELISTED',
+          logId,
+        });
       }
+
+      console.log(`[Form][${logId}] Reporter verified: ${profile.name} (${profile.area})`);
 
       const requestId = uuidv4().substring(0, 8).toUpperCase();
       const timestamp = getWIBTimestamp();
       const isLargeFarmer = body.creditLimitType === 'largeFarmer';
-      const creditType = body.creditType || '';
 
-      // Upload documents to Google Drive
+      // ── STEP 3: Upload ALL documents to Google Drive ──
+      console.log(`[Form][${logId}] Uploading documents to Google Drive...`);
       const driveUrls: Record<string, string> = {};
+      const uploadErrors: string[] = [];
       const docFields = ['docSignedSO', 'docFarmerHolding', 'docLandOwnership', 'docJaminan', 'docSurveyPhotoTM'];
 
       for (const fieldName of docFields) {
         const fileArr = files[fieldName];
         if (fileArr && fileArr.length > 0) {
-          const file = fileArr[0];
-          try {
+          const urls: string[] = [];
+          for (let i = 0; i < fileArr.length; i++) {
+            const file = fileArr[i];
             const ext = file.originalname.split('.').pop() || 'jpg';
-            const fileName = `${requestId}_${fieldName}.${ext}`;
-            const driveUrl = await googleDrive.uploadToDrive(file.buffer, fileName, file.mimetype);
-            driveUrls[fieldName] = driveUrl;
-          } catch (err: any) {
-            console.error(`[Form] Failed to upload ${fieldName}:`, err.message);
+            const fileName = `${requestId}_${fieldName}_${i + 1}.${ext}`;
+
+            // Retry up to 2 times for Drive upload
+            let driveUrl: string | null = null;
+            for (let attempt = 1; attempt <= 2; attempt++) {
+              try {
+                console.log(`[Form][${logId}] Uploading ${fileName} (${(file.size / 1024).toFixed(0)} KB) attempt ${attempt}...`);
+                driveUrl = await googleDrive.uploadToDrive(file.buffer, fileName, file.mimetype);
+                console.log(`[Form][${logId}] ✅ ${fileName} → ${driveUrl}`);
+                break;
+              } catch (err: any) {
+                console.error(`[Form][${logId}] ❌ Upload failed (attempt ${attempt}): ${fileName} — ${err.message}`);
+                if (attempt === 2) {
+                  uploadErrors.push(`${fieldName}_${i + 1}: ${err.message}`);
+                }
+              }
+            }
+
+            if (driveUrl) {
+              urls.push(driveUrl);
+            }
+          }
+          if (urls.length > 0) {
+            driveUrls[fieldName] = urls.join('\n');
           }
         }
       }
 
-      // Build Slack data
+      // Count uploaded files
+      const totalFiles = docFields.reduce((sum, f) => sum + (files[f]?.length || 0), 0);
+      const uploadedFiles = Object.values(driveUrls).reduce((sum, urls) => sum + urls.split('\n').length, 0);
+      console.log(`[Form][${logId}] Drive upload: ${uploadedFiles}/${totalFiles} files uploaded`);
+
+      if (uploadErrors.length > 0) {
+        console.error(`[Form][${logId}] ERR_DRIVE_UPLOAD: ${uploadErrors.length} file(s) failed: ${uploadErrors.join('; ')}`);
+      }
+
+      // If ALL files failed to upload, stop submission
+      if (totalFiles > 0 && uploadedFiles === 0) {
+        return res.status(500).json({
+          error: 'All document uploads failed. Please try again.',
+          code: 'ERR_DRIVE_UPLOAD_ALL_FAILED',
+          logId,
+          details: uploadErrors,
+        });
+      }
+
+      // ── STEP 4: Post to Slack ──
+      console.log(`[Form][${logId}] Posting to Slack...`);
       const slackData: Record<string, any> = {
         requestId,
         timestamp,
@@ -377,7 +436,6 @@ export async function registerRoutes(
         docSurveyPhotoTM: driveUrls.docSurveyPhotoTM || '',
       };
 
-      // Build a minimal session object for Slack posting
       const fakeSession: any = {
         phoneNumber: body.reporterPhone,
         senderName: profile.name,
@@ -387,18 +445,27 @@ export async function registerRoutes(
         mediaUrls: [],
       };
 
-      // Post to Slack
-      const slackResult = await postCreditLimitToSlack(fakeSession, slackData, (ts, channel) => {
-        sessionStore.storeSlackMapping(ts, channel, {
-          phoneNumber: body.reporterPhone,
-          senderName: profile.name,
-          reportType: 'creditTopUp',
-          requestId,
-          farmerName: body.farmerName,
+      let slackTs = '';
+      try {
+        const slackResult = await postCreditLimitToSlack(fakeSession, slackData, (ts, channel) => {
+          slackTs = ts;
+          sessionStore.storeSlackMapping(ts, channel, {
+            phoneNumber: body.reporterPhone,
+            senderName: profile.name,
+            reportType: 'creditTopUp',
+            requestId,
+            farmerName: body.farmerName,
+          });
         });
-      });
+        slackTs = slackResult.ts || '';
+        console.log(`[Form][${logId}] ✅ Slack posted (ts: ${slackTs})`);
+      } catch (slackErr: any) {
+        console.error(`[Form][${logId}] ERR_SLACK: ${slackErr.message}`);
+        // Continue — Slack failure should not block the submission
+      }
 
-      // Build income/collateral for sheets
+      // ── STEP 5: Write to Google Sheets ──
+      console.log(`[Form][${logId}] Writing to Google Sheets...`);
       let farmerIncomeAndBusiness = '';
       if (isLargeFarmer) {
         const parts: string[] = [];
@@ -415,7 +482,6 @@ export async function registerRoutes(
         }
       }
 
-      // Write to Google Sheets
       const sheetRow: googleSheets.CreditLimitRow = {
         timestamp,
         requestId,
@@ -431,7 +497,7 @@ export async function registerRoutes(
         soNumber: body.soNumber || '',
         farmerIncomeAndBusiness,
         collateralInfo,
-        docSignedSO: driveUrls.docSignedSO || driveUrls.docFarmerHolding ? driveUrls.docSignedSO || '' : '',
+        docSignedSO: driveUrls.docSignedSO || '',
         docFarmerHolding: driveUrls.docFarmerHolding || '',
         docLandOwnership: driveUrls.docLandOwnership || '',
         docJaminan: driveUrls.docJaminan || '',
@@ -440,12 +506,23 @@ export async function registerRoutes(
         reviewedBy: '',
         reviewDate: '',
         rejectionReason: '',
-        slackMessageTs: slackResult.ts || '',
+        slackMessageTs: slackTs,
       };
 
-      await googleSheets.appendRequest(sheetRow);
+      try {
+        await googleSheets.appendRequest(sheetRow);
+        console.log(`[Form][${logId}] ✅ Google Sheets row written`);
+      } catch (sheetErr: any) {
+        console.error(`[Form][${logId}] ERR_SHEETS: ${sheetErr.message}`);
+        return res.status(500).json({
+          error: 'Failed to save to Google Sheets. Data not recorded.',
+          code: 'ERR_SHEETS',
+          logId,
+          details: sheetErr.message,
+        });
+      }
 
-      // Log the activity
+      // ── STEP 6: Log activity ──
       addReportLog({
         type: 'creditTopUp',
         reporter: profile.name,
@@ -454,24 +531,43 @@ export async function registerRoutes(
         status: 'submitted',
       });
 
-      // Send WhatsApp notification to reporter
+      // ── STEP 7: Send WhatsApp notification ──
       try {
         await sendMessage(
           body.reporterPhone,
           `✅ Halo ${profile.name}! Permintaan credit limit top up untuk ${body.farmerName} sudah dikirim via form.\n\nRequest ID: *${requestId}*\nTim Ops Excellence akan review permintaan kamu.\n\nKamu akan mendapat notifikasi saat di-approve atau di-reject.\n\n_(Credit Limit Top Up submitted via form. Request ID: ${requestId}.)_`
         );
+        console.log(`[Form][${logId}] ✅ WhatsApp notification sent`);
       } catch (waErr: any) {
-        console.error('[Form] WhatsApp notification failed:', waErr.message);
+        console.error(`[Form][${logId}] ERR_WHATSAPP: ${waErr.message}`);
+        // Continue — WA failure should not block the response
       }
+
+      // ── DONE ──
+      const duration = Date.now() - startTime;
+      console.log(`[Form][${logId}] === DONE in ${duration}ms === Request ID: ${requestId}`);
+
+      const warnings: string[] = [];
+      if (uploadErrors.length > 0) warnings.push(`${uploadErrors.length} file(s) failed to upload to Drive`);
+      if (!slackTs) warnings.push('Slack notification failed');
 
       res.json({
         success: true,
         requestId,
+        logId,
         message: `Credit Limit Top Up submitted. Request ID: ${requestId}`,
+        warnings: warnings.length > 0 ? warnings : undefined,
       });
     } catch (err: any) {
-      console.error('[Form] Submit error:', err.message);
-      res.status(500).json({ error: 'Failed to submit. Please try again.' });
+      const duration = Date.now() - startTime;
+      console.error(`[Form][${logId}] ERR_UNKNOWN (${duration}ms): ${err.message}`);
+      console.error(`[Form][${logId}] Stack: ${err.stack}`);
+      res.status(500).json({
+        error: 'Something went wrong. Please try again or contact support.',
+        code: 'ERR_UNKNOWN',
+        logId,
+        details: err.message,
+      });
     }
   });
 
