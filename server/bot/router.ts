@@ -66,21 +66,26 @@ Balas 1 atau 2.
 
 _(Choose type: 1 for Standard, 2 for Large Farmer)_`;
 
-const CREDIT_LIMIT_START_MSG = `🏦 *Credit Limit Top Up*
+function getCreditLimitFormMsg(phoneNumber: string, creditType: string): string {
+  const baseUrl = process.env.REPLIT_DEV_DOMAIN
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : process.env.APP_URL || 'https://ag-wa-official.replit.app';
+  const formUrl = `${baseUrl}/credit-limit?phone=${phoneNumber}&type=${creditType}`;
 
-Saya akan tanya data satu per satu ya.
+  return `🏦 *Credit Limit Top Up*
 
-Pertama, siapa *nama Farmer Group (FG)*-nya?
+Silakan isi form berikut untuk submit permintaan:
 
-_(I'll ask for information step by step. First: what is the Farmer Group (FG) name?)_`;
+👉 ${formUrl}
 
-const CREDIT_LIMIT_LARGE_START_MSG = `🏦 *Credit Limit Top Up — Petani Besar*
+Form ini lebih cepat daripada chat. Setelah submit, tim Ops Excellence akan langsung dinotifikasi.
 
-Saya akan tanya data satu per satu ya.
+Kamu akan mendapat notifikasi di WhatsApp saat permintaan di-approve atau di-reject.
 
-Pertama, siapa *nama Farmer Group (FG)*-nya?
+Ketik *START* untuk kembali ke menu utama.
 
-_(I'll ask for information step by step. First: what is the Farmer Group (FG) name?)_`;
+_(Please fill out the form above to submit your request. You'll be notified via WhatsApp when it's approved or rejected.)_`;
+}
 
 const CONFIRM_ONLY_MSG = `Di langkah ini, saya hanya mengerti:
 
@@ -192,27 +197,13 @@ export async function handleMessage(
 
   if (currentSession.step === 'SELECT_CREDIT_TYPE') {
     if (cleanText === '1') {
-      currentSession.reportType = 'creditTopUp';
-      currentSession.creditLimitType = 'standard';
-      currentSession.step = 'COLLECTING';
-      currentSession.conversation = [];
-      currentSession.mediaUrls = [];
-      currentSession.followUpCount = 0;
-      currentSession.parsedReport = null;
-      currentSession.data = {};
-      await wati.sendMessage(phoneNumber, CREDIT_LIMIT_START_MSG);
+      await wati.sendMessage(phoneNumber, getCreditLimitFormMsg(phoneNumber, 'standard'));
+      sessionStore.reset(phoneNumber);
       return;
     }
     if (cleanText === '2') {
-      currentSession.reportType = 'creditTopUp';
-      currentSession.creditLimitType = 'largeFarmer';
-      currentSession.step = 'COLLECTING';
-      currentSession.conversation = [];
-      currentSession.mediaUrls = [];
-      currentSession.followUpCount = 0;
-      currentSession.parsedReport = null;
-      currentSession.data = {};
-      await wati.sendMessage(phoneNumber, CREDIT_LIMIT_LARGE_START_MSG);
+      await wati.sendMessage(phoneNumber, getCreditLimitFormMsg(phoneNumber, 'largeFarmer'));
+      sessionStore.reset(phoneNumber);
       return;
     }
     await wati.sendMessage(phoneNumber, `Balas *1* untuk Top-Up Credit (< 2.5 Ha) atau *2* untuk Petani Besar (> 2.5 Ha).\n\n_(Reply 1 or 2.)_`);

@@ -21,6 +21,14 @@ export function getWhitelistCount(): number {
   return Object.keys(database).length;
 }
 
+export function getAllAgronomists(): Array<{ phoneNumber: string; name: string; area: string }> {
+  return Object.entries(database).map(([phone, profile]) => ({
+    phoneNumber: phone,
+    name: profile.name,
+    area: profile.area,
+  }));
+}
+
 export const REJECTED_MSG = `⚠️ Maaf, nomor kamu belum terdaftar. Hubungi Territory Manager kamu.
 
 _(Sorry, your number is not registered. Contact your Territory Manager.)_`;

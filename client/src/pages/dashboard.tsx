@@ -22,8 +22,10 @@ import {
   Hash,
   Globe,
   Key,
+  FileText,
 } from "lucide-react";
 import { SiSlack, SiWhatsapp } from "react-icons/si";
+import { Link } from "wouter";
 
 function formatUptime(seconds: number): string {
   const d = Math.floor(seconds / 86400);
@@ -184,6 +186,12 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Link href="/credit-limit">
+              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90 transition-colors">
+                <FileText className="w-3.5 h-3.5" />
+                Credit Limit Form
+              </button>
+            </Link>
             {statusLoading ? (
               <Badge variant="secondary" className="text-xs">Loading...</Badge>
             ) : status?.status === "ready" ? (
