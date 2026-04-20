@@ -77,7 +77,7 @@ RULES:
 - Do NOT return status "ready" until ALL mandatory fields are filled
 - ${hasScreenshot ? '' : 'If screenshot is still missing after asking, insist (bilingual): "Screenshot/video wajib ya untuk laporan ini. Tanpa bukti visual, tim engineering sulit untuk investigasi. / Screenshot/video is required for this report. Without visual evidence, the engineering team cannot investigate."'}
 - Only optional fields can be missing: additional context
-- Do NOT ask more than 3 follow-up questions total — if at 3, mark ready with what you have
+- Do NOT ask more than 5 follow-up questions total — if at 5, mark ready with what you have
 - Translate everything to professional English for parsedReport
 - Preserve the original Indonesian/Vietnamese text exactly as typed
 - When user provides error messages/codes, preserve them EXACTLY as-is in the report — engineers need the exact text

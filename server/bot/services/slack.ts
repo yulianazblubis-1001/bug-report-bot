@@ -111,6 +111,18 @@ function buildBugReportBlocks(session: BotSession): any[] {
     ],
   });
 
+  if (report.errorDetails && report.errorDetails !== '—') {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Error Details:*\n\`\`\`${report.errorDetails}\`\`\`` },
+    });
+  } else {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Error Details:* ${report.errorDetails || '—'}` },
+    });
+  }
+
   blocks.push({
     type: 'section',
     text: { type: 'mrkdwn', text: `*Additional Info:* ${report.additionalInfo || '—'}` },
