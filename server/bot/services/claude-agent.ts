@@ -346,7 +346,7 @@ export async function evaluateReport(
   try {
     const systemPrompt = buildSystemPrompt(reportType, hasScreenshot, creditLimitType);
     const isLargeFarmer = creditLimitType === 'largeFarmer';
-    const maxFollowUps = reportType === 'creditTopUp' ? (isLargeFarmer ? 12 : 8) : 3;
+    const maxFollowUps = reportType === 'creditTopUp' ? (isLargeFarmer ? 12 : 8) : 5;
     const contextNote = followUpCount >= maxFollowUps
       ? '\n\nIMPORTANT: You have already asked multiple follow-up questions. Mark this as "ready" now with whatever information you have. Do not ask more questions.'
       : '';
@@ -386,7 +386,7 @@ export async function evaluateReport(
 
     const parsed = JSON.parse(jsonMatch[0]);
 
-    const hardLimit = reportType === 'creditTopUp' ? (isLargeFarmer ? 12 : 8) : 3;
+    const hardLimit = reportType === 'creditTopUp' ? (isLargeFarmer ? 12 : 8) : 5;
     if (followUpCount >= hardLimit && parsed.status === 'need_more_info') {
       parsed.status = 'ready';
     }

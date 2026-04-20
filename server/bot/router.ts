@@ -266,7 +266,7 @@ export async function handleMessage(
 
       const hasScreenshot = currentSession.mediaUrls.length > 0;
       const isLargeFarmer = currentSession.creditLimitType === 'largeFarmer';
-      const maxFollowUps = currentSession.reportType === 'creditTopUp' ? (isLargeFarmer ? 12 : 8) : 3;
+      const maxFollowUps = currentSession.reportType === 'creditTopUp' ? (isLargeFarmer ? 12 : 8) : 5;
 
       const result = await evaluateReport(
         currentSession.conversation,
@@ -298,7 +298,11 @@ export async function handleMessage(
         currentSession.followUpCount++;
         currentSession.conversation.push({
           role: 'assistant',
-          text: result.followUpQuestion,
+          text: JSON.stringify({
+            status: 'need_more_info',
+            followUpQuestion: result.followUpQuestion,
+            parsedReport: result.parsedReport || {},
+          }),
         });
         await wati.sendMessage(phoneNumber, result.followUpQuestion);
         return;

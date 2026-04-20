@@ -1,0 +1,38 @@
+Looking at both screenshots, here's what broke vs what was working:
+
+| | Broken (now) | Working (Apr 17) |
+|---|---|---|
+| Title | `[Other] Report` | `[App Bug] Cannot submit land parcel...` |
+| Description | Full Bahasa | English |
+| Additional Info | `—` | English + `_Original:` in Bahasa |
+
+Here's your Replit prompt:
+
+---
+
+**Prompt for Replit:**
+
+> The Slack bug report formatter is broken. Compare the current output to the last working version from April 17, 2025.
+>
+> **Problems to fix:**
+> 1. **Translation not working** — The entire report (Description, Steps to Reproduce, Additional Info) is staying in Bahasa Indonesia. It must be translated to English. Only the `_Original:` section should stay in Bahasa.
+> 2. **Title generation broken** — The title is showing as `[Other] Report` instead of a generated summary like `[App Bug] Cannot submit land parcel verification due to null object error`. The title should be auto-generated in English based on the report content.
+> 3. Check if there was any recent code change after April 17 that affected the Claude API call — the translation and title generation likely broke there.
+>
+> **Expected format:**
+> - Title: `[Category] Short English summary of the issue`
+> - Description: Translated to English
+> - Steps to Reproduce: Translated to English
+> - Additional Info: Translated to English
+> - `_Original:` followed by the original Bahasa text (no translation here)
+
+---
+
+**Edge cases to watch:**
+
+| Edge Case | Risk | Solution |
+|---|---|---|
+| Reporter writes mix of Bahasa + English | Translation may be inconsistent | Prompt Claude to "translate any non-English text to English" |
+| Claude API timeout | Fields stay empty or untranslated | Add fallback: if translation fails, put original text + flag `[Translation failed]` |
+| Category detection fails | Title defaults to `[Other]` with no summary | Make title generation a separate step, not dependent on category |
+| Very short report (1 sentence) | Steps to Reproduce becomes empty | If no steps found, write `_Steps not provided by reporter_` instead of `—` |
