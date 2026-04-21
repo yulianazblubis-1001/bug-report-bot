@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "6s7LCNT5gmikIItbbUOhu"
+uri = "file://whitelist.md"
+type = "text"
+title = "Whitelisted Agronomists (78 people)"
