@@ -172,7 +172,8 @@ export async function registerRoutes(
         }
 
         const reportNumber = registryRecord?.reportNumber || mapping.reportNumber || '';
-        const rnText = reportNumber ? ` dengan Report Number ${reportNumber}` : '';
+        const rnTextID = reportNumber ? ` dengan Report Number ${reportNumber}` : '';
+        const rnSubjectEN = reportNumber ? `Your Report Number ${reportNumber}` : 'Your report';
 
         // Duplicate-resolution guard — skip if already marked DONE in registry
         if (registryRecord?.status === 'DONE') {
@@ -188,7 +189,7 @@ export async function registerRoutes(
               }
               await sendMessage(
                 mapping.phoneNumber,
-                `✅ Halo ${mapping.senderName}! Credit Limit Top Up${rnText} sudah diproses oleh tim.\n\n_(Your credit limit top-up${rnText} has been processed by the team.)_`
+                `✅ Halo ${mapping.senderName}! Credit Limit Top Up${rnTextID} sudah diproses oleh tim.\n\n_(${rnSubjectEN} has been processed by the team.)_`
               );
               await postSlackThreadReply(channelId, itemTs, `✅ Credit limit top-up has been processed. WhatsApp notification sent to ${mapping.senderName}.`);
               await reportRegistry.markResolved(itemTs);
@@ -203,7 +204,7 @@ export async function registerRoutes(
         if (reaction === "done") {
           await sendMessage(
             mapping.phoneNumber,
-            `Halo ${mapping.senderName}! Laporan kamu${rnText} sudah ditandai DONE oleh tim. Masalahnya sudah diperbaiki, silakan coba lagi.\n\n_(Your report${rnText} has been marked DONE by the team. The issue has been fixed, please try again.)_`
+            `Halo ${mapping.senderName}! Laporan kamu${rnTextID} sudah ditandai DONE oleh tim. Masalahnya sudah diperbaiki, silakan coba lagi.\n\n_(${rnSubjectEN} has been marked DONE by the team. The issue has been fixed, please try again.)_`
           );
           await reportRegistry.markResolved(itemTs);
           console.log(`[Slack Events] :done: -> notified ${mapping.phoneNumber}`);
@@ -212,7 +213,7 @@ export async function registerRoutes(
         if (reaction === "solve" || reaction === "solved") {
           await sendMessage(
             mapping.phoneNumber,
-            `Halo ${mapping.senderName}! Laporan kamu${rnText} sudah SOLVED. Silakan cek ya.\n\n_(Your report${rnText} has been SOLVED. Please check.)_`
+            `Halo ${mapping.senderName}! Laporan kamu${rnTextID} sudah SOLVED. Silakan cek ya.\n\n_(${rnSubjectEN} has been SOLVED. Please check.)_`
           );
           await reportRegistry.markResolved(itemTs);
           console.log(`[Slack Events] :solve: -> notified ${mapping.phoneNumber}`);
@@ -287,19 +288,20 @@ export async function registerRoutes(
           const rowData = await googleSheets.findByRequestId(requestId);
           sheetReportNumber = rowData?.data?.reportNumber || '';
         } catch {}
-        const rnText = sheetReportNumber ? ` dengan Report Number ${sheetReportNumber}` : '';
+        const rnTextID2 = sheetReportNumber ? ` dengan Report Number ${sheetReportNumber}` : '';
+        const rnSubjectEN2 = sheetReportNumber ? `Your Report Number ${sheetReportNumber}` : 'Your credit limit top-up';
 
         if (status === 'REJECTED' && reporterPhone) {
           await sendMessage(
             reporterPhone,
-            `❌ Halo ${reporterName || ''}! Credit Limit Top Up${rnText} ditolak.\n\nAlasan: ${reason}\n\nKamu bisa submit ulang dengan ketik *START*.\n\n_(Your credit limit top-up${rnText} was rejected. Reason: ${reason}. Type START to resubmit.)_`
+            `❌ Halo ${reporterName || ''}! Credit Limit Top Up${rnTextID2} ditolak.\n\nAlasan: ${reason}\n\nKamu bisa submit ulang dengan ketik *START*.\n\n_(${rnSubjectEN2} was rejected. Reason: ${reason}. Type START to resubmit.)_`
           );
         }
 
         if (status === 'APPROVED' && reporterPhone) {
           await sendMessage(
             reporterPhone,
-            `✅ Halo ${reporterName || ''}! Credit Limit Top Up${rnText} disetujui oleh tim.\n\nTim engineering akan segera memprosesnya.\n\n_(Your credit limit top-up${rnText} has been approved by ${reviewedBy || 'Ops'}. The engineering team will process it soon.)_`
+            `✅ Halo ${reporterName || ''}! Credit Limit Top Up${rnTextID2} disetujui oleh tim.\n\nTim engineering akan segera memprosesnya.\n\n_(${rnSubjectEN2} has been approved by ${reviewedBy || 'Ops'}. The engineering team will process it soon.)_`
           );
         }
 
