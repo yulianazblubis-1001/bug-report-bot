@@ -39,7 +39,7 @@ function buildMediaLine(mediaCount: number): any {
   };
 }
 
-function buildBugReportBlocks(session: BotSession): any[] {
+function buildBugReportBlocks(session: BotSession, reportNumber?: string): any[] {
   const report = session.parsedReport || {};
   const profile = session.profile;
   const timestamp = getWIBTimestamp();
@@ -57,11 +57,24 @@ function buildBugReportBlocks(session: BotSession): any[] {
       fields: [
         {
           type: 'mrkdwn',
-          text: `*Reporter:* ${profile?.name || session.senderName} (${profile?.zohoEmail || session.phoneNumber})`,
+          text: `*Report Number:* ${reportNumber || '—'}`,
         },
         {
           type: 'mrkdwn',
           text: `*Category:* ${report.category || '—'}`,
+        },
+      ],
+    },
+    {
+      type: 'section',
+      fields: [
+        {
+          type: 'mrkdwn',
+          text: `*Reporter:* ${profile?.name || session.senderName} (${profile?.zohoEmail || session.phoneNumber})`,
+        },
+        {
+          type: 'mrkdwn',
+          text: `*Area:* ${profile?.area || '—'}`,
         },
       ],
     },
@@ -145,7 +158,7 @@ function buildBugReportBlocks(session: BotSession): any[] {
   return blocks;
 }
 
-function buildAdminRequestBlocks(session: BotSession): any[] {
+function buildAdminRequestBlocks(session: BotSession, reportNumber?: string): any[] {
   const report = session.parsedReport || {};
   const profile = session.profile;
   const timestamp = getWIBTimestamp();
@@ -163,11 +176,24 @@ function buildAdminRequestBlocks(session: BotSession): any[] {
       fields: [
         {
           type: 'mrkdwn',
-          text: `*Reporter:* ${profile?.name || session.senderName} (${profile?.zohoEmail || session.phoneNumber})`,
+          text: `*Report Number:* ${reportNumber || '—'}`,
         },
         {
           type: 'mrkdwn',
           text: `*Category:* ${report.category || '—'}`,
+        },
+      ],
+    },
+    {
+      type: 'section',
+      fields: [
+        {
+          type: 'mrkdwn',
+          text: `*Reporter:* ${profile?.name || session.senderName} (${profile?.zohoEmail || session.phoneNumber})`,
+        },
+        {
+          type: 'mrkdwn',
+          text: `*Area:* ${profile?.area || '—'}`,
         },
       ],
     },
@@ -334,7 +360,7 @@ async function uploadFileToSlack(
   }
 }
 
-export function buildCreditLimitBlocks(session: BotSession, data: Record<string, any>): any[] {
+export function buildCreditLimitBlocks(session: BotSession, data: Record<string, any>, reportNumber?: string): any[] {
   const profile = session.profile;
   const timestamp = getWIBTimestamp();
   const isLargeFarmer = data.creditLimitType === 'largeFarmer';
@@ -355,8 +381,15 @@ export function buildCreditLimitBlocks(session: BotSession, data: Record<string,
     {
       type: 'section',
       fields: [
-        { type: 'mrkdwn', text: `*Requestor:* ${profile?.name || session.senderName} | +${session.phoneNumber}` },
+        { type: 'mrkdwn', text: `*Report Number:* ${reportNumber || '—'}` },
         { type: 'mrkdwn', text: `*Request ID:* ${data.requestId}` },
+      ],
+    },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Requestor:* ${profile?.name || session.senderName} | +${session.phoneNumber}` },
+        { type: 'mrkdwn', text: `*Area:* ${profile?.area || '—'}` },
       ],
     },
     {
@@ -481,9 +514,10 @@ export function buildCreditLimitBlocks(session: BotSession, data: Record<string,
 export async function postCreditLimitToSlack(
   session: BotSession,
   data: Record<string, any>,
-  onSlackTs?: (ts: string, channel: string) => void
+  onSlackTs?: (ts: string, channel: string) => void,
+  reportNumber?: string
 ): Promise<any> {
-  const blocks = buildCreditLimitBlocks(session, data);
+  const blocks = buildCreditLimitBlocks(session, data, reportNumber);
   const fallbackText = `Credit Limit Top Up — ${data.farmerName} — ${session.profile?.name || session.senderName}`;
 
   const botToken = process.env.SLACK_BOT_TOKEN;
@@ -582,12 +616,13 @@ export async function getSlackUserName(userId: string): Promise<string> {
 
 export async function postToSlack(
   session: BotSession,
-  onSlackTs?: (ts: string, channel: string) => void
+  onSlackTs?: (ts: string, channel: string) => void,
+  reportNumber?: string
 ): Promise<any> {
   const blocks =
     session.reportType === 'bug'
-      ? buildBugReportBlocks(session)
-      : buildAdminRequestBlocks(session);
+      ? buildBugReportBlocks(session, reportNumber)
+      : buildAdminRequestBlocks(session, reportNumber);
 
   const report = session.parsedReport || {};
   const fallbackText = `${report.title || 'Report'} — ${session.profile?.name || session.senderName}`;

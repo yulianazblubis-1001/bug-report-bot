@@ -86,12 +86,13 @@ export interface CreditLimitRow {
   docFarmerHolding: string;        // P
   docLandOwnership: string;        // Q
   docJaminan: string;              // R
-  docSurveyPhotoTM: string;        // S ← NEW
-  status: string;                  // T (was S)
-  reviewedBy: string;              // U (was T)
-  reviewDate: string;              // V (was U)
-  rejectionReason: string;         // W (was V)
-  slackMessageTs: string;          // X (was W)
+  docSurveyPhotoTM: string;        // S
+  status: string;                  // T
+  reviewedBy: string;              // U
+  reviewDate: string;              // V
+  rejectionReason: string;         // W
+  slackMessageTs: string;          // X
+  reportNumber: string;            // Y (NEW)
 }
 
 export async function appendRequest(data: CreditLimitRow): Promise<void> {
@@ -119,17 +120,18 @@ export async function appendRequest(data: CreditLimitRow): Promise<void> {
     data.docFarmerHolding,        // P
     data.docLandOwnership,        // Q
     data.docJaminan,              // R
-    data.docSurveyPhotoTM,        // S ← NEW
-    data.status,                  // T (was S)
-    data.reviewedBy,              // U (was T)
-    data.reviewDate,              // V (was U)
-    data.rejectionReason,         // W (was V)
-    data.slackMessageTs,          // X (was W)
+    data.docSurveyPhotoTM,        // S
+    data.status,                  // T
+    data.reviewedBy,              // U
+    data.reviewDate,              // V
+    data.rejectionReason,         // W
+    data.slackMessageTs,          // X
+    data.reportNumber || '',      // Y (NEW)
   ];
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: 'request!A:X',
+    range: 'request!A:Y',
     valueInputOption: 'RAW',
     requestBody: { values: [row] },
   });
@@ -185,7 +187,7 @@ export async function findBySlackTs(slackTs: string): Promise<{ rowIndex: number
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'request!A:X',
+    range: 'request!A:Y',
   });
 
   const rows = res.data.values || [];
@@ -207,7 +209,7 @@ export async function findByRequestId(requestId: string): Promise<{ rowIndex: nu
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'request!A:X',
+    range: 'request!A:Y',
   });
 
   const rows = res.data.values || [];
@@ -243,12 +245,13 @@ function rowToData(row: string[]): CreditLimitRow {
     docFarmerHolding: row[15] || '',       // P
     docLandOwnership: row[16] || '',       // Q
     docJaminan: row[17] || '',             // R
-    docSurveyPhotoTM: row[18] || '',       // S ← NEW
-    status: row[19] || '',                 // T (was S/18)
-    reviewedBy: row[20] || '',             // U (was T/19)
-    reviewDate: row[21] || '',             // V (was U/20)
-    rejectionReason: row[22] || '',        // W (was V/21)
-    slackMessageTs: row[23] || '',         // X (was W/22)
+    docSurveyPhotoTM: row[18] || '',       // S
+    status: row[19] || '',                 // T
+    reviewedBy: row[20] || '',             // U
+    reviewDate: row[21] || '',             // V
+    rejectionReason: row[22] || '',        // W
+    slackMessageTs: row[23] || '',         // X
+    reportNumber: row[24] || '',           // Y (NEW)
   };
 }
 export interface FarmerRecord {

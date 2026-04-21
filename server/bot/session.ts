@@ -40,6 +40,7 @@ export interface SlackMapping {
   summary?: string;
   requestId?: string;
   farmerName?: string;
+  reportNumber?: string;
 }
 
 class SessionStore {

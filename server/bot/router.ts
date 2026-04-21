@@ -8,6 +8,7 @@ import { isWhitelisted, lookupProfile, REJECTED_MSG } from './whitelist';
 import * as googleSheets from './services/google-sheets';
 import * as googleDrive from './services/google-drive';
 import { v4 as uuidv4 } from 'uuid';
+import { getNextReportNumber } from './services/reportCounter';
 
 function getWelcomeMsg(name: string): string {
   return `Halo ${name}!
@@ -435,13 +436,17 @@ async function submitReport(session: BotSession): Promise<void> {
   try {
     await wati.sendMessage(phoneNumber, 'Sedang mengirim laporan...');
 
+    const typeCode = session.reportType === 'bug' ? 'BUG' : 'ADM';
+    const reportNumber = await getNextReportNumber(typeCode);
+
     await slack.postToSlack(session, (ts, channel) => {
       sessionStore.storeSlackMapping(ts, channel, {
         phoneNumber: session.phoneNumber,
         senderName: displayName,
         reportType: session.reportType!,
+        reportNumber,
       });
-    });
+    }, reportNumber);
 
     const typeLabel = session.reportType === 'bug' ? 'Bug Report' : 'Admin Request';
     const report = session.parsedReport || {};
@@ -454,11 +459,11 @@ async function submitReport(session: BotSession): Promise<void> {
       status: 'submitted',
     });
 
-    let successMsg = `*${typeLabel} berhasil dikirim!*\n\nTim sudah dinotifikasi. Terima kasih, ${displayName}!`;
+    let successMsg = `*${typeLabel} berhasil dikirim!*\n\nReport Number: *${reportNumber}*\n\nTim sudah dinotifikasi. Terima kasih, ${displayName}!`;
     if (session.mediaUrls.length > 0) {
       successMsg += `\n\nScreenshot/media sudah dilampirkan di laporan.`;
     }
-    successMsg += `\n\nKetik *START* untuk laporan baru.\n\n_(${typeLabel} submitted successfully. Type START for a new report.)_`;
+    successMsg += `\n\nKetik *START* untuk laporan baru.\n\n_(${typeLabel} submitted. Report Number: ${reportNumber}. Type START for a new report.)_`;
 
     await wati.sendMessage(phoneNumber, successMsg);
     sessionStore.reset(phoneNumber);
@@ -603,6 +608,8 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
       docSurveyPhotoTM: driveUrls.docSurveyPhotoTM || '',
     };
 
+    const reportNumber = await getNextReportNumber('CRD');
+
     const slackResult = await slack.postCreditLimitToSlack(session, slackData, (ts, channel) => {
       sessionStore.storeSlackMapping(ts, channel, {
         phoneNumber: session.phoneNumber,
@@ -610,8 +617,9 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
         reportType: 'creditTopUp',
         requestId,
         farmerName: report.farmerName || '',
+        reportNumber,
       });
-    });
+    }, reportNumber);
 
     let farmerIncomeAndBusiness = '';
     if (isLargeFarmer) {
@@ -654,6 +662,7 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
       reviewDate: '',
       rejectionReason: '',
       slackMessageTs: slackResult.ts || '',
+      reportNumber,
     };
 
     console.log(`[CreditLimit] Saving slackMessageTs="${sheetRow.slackMessageTs}" to sheet for ${requestId}`);
@@ -678,12 +687,12 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
     });
 
     let successMsg = `*Credit Limit Top Up berhasil dikirim!*\n\n`;
-    successMsg += `Request ID: *${requestId}*\n`;
+    successMsg += `Report Number: *${reportNumber}*\n`;
     successMsg += `Farmer: ${report.farmerName || '—'}\n`;
     successMsg += `Tim Ops Excellence sudah dinotifikasi dan akan review permintaan kamu.\n\n`;
     successMsg += `Kamu akan mendapat notifikasi saat permintaan di-approve atau di-reject.\n\n`;
     successMsg += `Ketik *START* untuk permintaan baru.\n\n`;
-    successMsg += `_(Credit Limit Top Up submitted. Request ID: ${requestId}. You'll be notified when it's approved or rejected. Type START for a new request.)_`;
+    successMsg += `_(Credit Limit Top Up submitted. Report Number: ${reportNumber}. You'll be notified when it's approved or rejected. Type START for a new request.)_`;
 
     await wati.sendMessage(phoneNumber, successMsg);
     sessionStore.reset(phoneNumber);

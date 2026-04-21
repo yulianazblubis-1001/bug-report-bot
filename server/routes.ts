@@ -167,9 +167,10 @@ export async function registerRoutes(
               if (mapping.requestId) {
                 await googleSheets.updateStatus(mapping.requestId, 'RESOLVED', 'Engineer', '');
               }
+              const rn = mapping.reportNumber ? ` (Report Number: ${mapping.reportNumber})` : '';
               await sendMessage(
                 mapping.phoneNumber,
-                `✅ Halo ${mapping.senderName}! Credit limit top up untuk ${mapping.farmerName || 'farmer'} sudah diproses! Silakan cek di app. 🙏\n\n_(Your credit limit top-up for ${mapping.farmerName || 'farmer'} has been processed! Please check in the app.)_`
+                `✅ Halo ${mapping.senderName}! Credit limit top up untuk ${mapping.farmerName || 'farmer'}${rn} sudah diproses! Silakan cek di app. 🙏\n\n_(Your credit limit top-up for ${mapping.farmerName || 'farmer'}${rn} has been processed! Please check in the app.)_`
               );
               await postSlackThreadReply(channelId, itemTs, `✅ Credit limit top-up has been processed. WhatsApp notification sent to ${mapping.senderName}.`);
               console.log(`[Slack Events] Credit limit resolved for ${mapping.phoneNumber}`);
@@ -181,17 +182,19 @@ export async function registerRoutes(
         }
 
         if (reaction === "done") {
+          const rn = mapping.reportNumber ? ` (Report Number: ${mapping.reportNumber})` : '';
           await sendMessage(
             mapping.phoneNumber,
-            `Halo ${mapping.senderName}! Laporan kamu sudah ditandai DONE oleh tim. Masalahnya sudah diperbaiki, silakan coba lagi.\n\n_(Your report has been marked DONE. The issue has been fixed, please try again.)_`
+            `Halo ${mapping.senderName}! Laporan kamu${rn} sudah ditandai DONE oleh tim. Masalahnya sudah diperbaiki, silakan coba lagi.\n\n_(Your report${rn} has been marked DONE. The issue has been fixed, please try again.)_`
           );
           console.log(`[Slack Events] :done: -> notified ${mapping.phoneNumber}`);
         }
 
         if (reaction === "solve" || reaction === "solved") {
+          const rn = mapping.reportNumber ? ` (Report Number: ${mapping.reportNumber})` : '';
           await sendMessage(
             mapping.phoneNumber,
-            `Halo ${mapping.senderName}! Laporan kamu sudah SOLVED. Silakan cek ya.\n\n_(Your report has been SOLVED. Please check.)_`
+            `Halo ${mapping.senderName}! Laporan kamu${rn} sudah SOLVED. Silakan cek ya.\n\n_(Your report${rn} has been SOLVED. Please check.)_`
           );
           console.log(`[Slack Events] :solve: -> notified ${mapping.phoneNumber}`);
         }
@@ -260,17 +263,24 @@ export async function registerRoutes(
           }
         }
 
+        let sheetReportNumber = '';
+        try {
+          const rowData = await googleSheets.findByRequestId(requestId);
+          sheetReportNumber = rowData?.data?.reportNumber || '';
+        } catch {}
+        const rnLabel = sheetReportNumber ? ` (Report Number: ${sheetReportNumber})` : '';
+
         if (status === 'REJECTED' && reporterPhone) {
           await sendMessage(
             reporterPhone,
-            `❌ Halo ${reporterName || ''}, permintaan credit limit top up untuk ${farmerName || 'farmer'} ditolak.\n\nAlasan: ${reason}\n\nKamu bisa submit ulang dengan ketik *START*.\n\n_(Your credit limit top-up request for ${farmerName || 'farmer'} was rejected. Reason: ${reason}. Type START to resubmit.)_`
+            `❌ Halo ${reporterName || ''}, permintaan credit limit top up untuk ${farmerName || 'farmer'}${rnLabel} ditolak.\n\nAlasan: ${reason}\n\nKamu bisa submit ulang dengan ketik *START*.\n\n_(Your credit limit top-up request for ${farmerName || 'farmer'}${rnLabel} was rejected. Reason: ${reason}. Type START to resubmit.)_`
           );
         }
 
         if (status === 'APPROVED' && reporterPhone) {
           await sendMessage(
             reporterPhone,
-            `✅ Halo ${reporterName || ''}, permintaan credit limit top up untuk ${farmerName || 'farmer'} sudah di-approve oleh ${reviewedBy || 'Ops'}.\n\nTim engineering akan segera memprosesnya.\n\n_(Your credit limit top-up request for ${farmerName || 'farmer'} has been approved by ${reviewedBy || 'Ops'}.)_`
+            `✅ Halo ${reporterName || ''}, permintaan credit limit top up untuk ${farmerName || 'farmer'}${rnLabel} sudah di-approve oleh ${reviewedBy || 'Ops'}.\n\nTim engineering akan segera memprosesnya.\n\n_(Your credit limit top-up request for ${farmerName || 'farmer'}${rnLabel} has been approved by ${reviewedBy || 'Ops'}.)_`
           );
         }
 
