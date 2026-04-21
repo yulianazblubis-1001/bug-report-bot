@@ -2,6 +2,81 @@ import { google } from 'googleapis';
 
 let connectionSettings: any = null;
 
+// Track which tabs have been verified to exist this process (avoids repeated API calls)
+const verifiedTabs = new Set<string>();
+
+export async function ensureTabExists(tabName: string, headers: string[]): Promise<void> {
+  if (verifiedTabs.has(tabName)) return;
+
+  const sheets = await getUncachableGoogleSheetClient();
+  const spreadsheetId = getSheetId();
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const exists = meta.data.sheets?.some((s: any) => s.properties?.title === tabName);
+
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: tabName } } }],
+      },
+    });
+    if (headers.length > 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${tabName}!A1`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [headers] },
+      });
+    }
+    console.log(`[Google Sheets] Created tab: ${tabName}`);
+  } else {
+    console.log(`[Google Sheets] Tab verified: ${tabName}`);
+  }
+
+  verifiedTabs.add(tabName);
+}
+
+export async function getNextCounterValue(date: string, type: string): Promise<number> {
+  await ensureTabExists('counters', ['date', 'type', 'last_number']);
+
+  const sheets = await getUncachableGoogleSheetClient();
+  const spreadsheetId = getSheetId();
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'counters!A:C',
+  });
+
+  const rows = res.data.values || [];
+
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i][0] === date && rows[i][1] === type) {
+      const current = parseInt(rows[i][2] || '0', 10);
+      const next = current + 1;
+      const rowIndex = i + 1;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `counters!C${rowIndex}`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [[String(next)]] },
+      });
+      console.log(`[Counter] ${date}-${type}: ${current} → ${next}`);
+      return next;
+    }
+  }
+
+  // No row for this date+type yet — start at 1
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: 'counters!A:C',
+    valueInputOption: 'RAW',
+    requestBody: { values: [[date, type, '1']] },
+  });
+  console.log(`[Counter] ${date}-${type}: new row → 1`);
+  return 1;
+}
+
 async function getAccessToken() {
   if (connectionSettings && connectionSettings.settings?.expires_at && new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
     return connectionSettings.settings.access_token;
@@ -268,9 +343,16 @@ export interface RegistryEntry {
   resolvedAt: string;     // I
 }
 
+const REGISTRY_HEADERS = [
+  'slack_message_ts', 'slack_channel_id', 'report_number',
+  'reporter_phone', 'reporter_name', 'report_type',
+  'status', 'created_at', 'resolved_at',
+];
+
 export async function appendRegistryEntry(
   entry: Pick<RegistryEntry, 'messageTs' | 'channelId' | 'reportNumber' | 'reporterPhone' | 'reporterName' | 'reportType'>
 ): Promise<void> {
+  await ensureTabExists('reports_registry', REGISTRY_HEADERS);
   const sheets = await getUncachableGoogleSheetClient();
   const spreadsheetId = getSheetId();
 
@@ -297,6 +379,7 @@ export async function appendRegistryEntry(
 }
 
 export async function getRegistryEntry(messageTs: string): Promise<{ rowIndex: number; entry: RegistryEntry } | null> {
+  await ensureTabExists('reports_registry', REGISTRY_HEADERS);
   const sheets = await getUncachableGoogleSheetClient();
   const spreadsheetId = getSheetId();
 
@@ -329,6 +412,7 @@ export async function getRegistryEntry(messageTs: string): Promise<{ rowIndex: n
 }
 
 export async function markRegistryResolved(messageTs: string): Promise<void> {
+  await ensureTabExists('reports_registry', REGISTRY_HEADERS);
   const sheets = await getUncachableGoogleSheetClient();
   const spreadsheetId = getSheetId();
 
