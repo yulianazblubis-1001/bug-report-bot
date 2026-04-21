@@ -254,6 +254,123 @@ function rowToData(row: string[]): CreditLimitRow {
     reportNumber: row[24] || '',           // Y (NEW)
   };
 }
+// ─── Report Registry (reports_registry tab) ──────────────────────────────────
+
+export interface RegistryEntry {
+  messageTs: string;      // A - primary key
+  channelId: string;      // B
+  reportNumber: string;   // C
+  reporterPhone: string;  // D
+  reporterName: string;   // E
+  reportType: string;     // F bug | admin | credit
+  status: string;         // G PENDING | DONE
+  createdAt: string;      // H
+  resolvedAt: string;     // I
+}
+
+export async function appendRegistryEntry(
+  entry: Pick<RegistryEntry, 'messageTs' | 'channelId' | 'reportNumber' | 'reporterPhone' | 'reporterName' | 'reportType'>
+): Promise<void> {
+  const sheets = await getUncachableGoogleSheetClient();
+  const spreadsheetId = getSheetId();
+
+  const row = [
+    entry.messageTs,
+    entry.channelId,
+    entry.reportNumber,
+    entry.reporterPhone,
+    entry.reporterName,
+    entry.reportType,
+    'PENDING',
+    getWIBTimestamp(),
+    '',
+  ];
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: 'reports_registry!A:I',
+    valueInputOption: 'RAW',
+    requestBody: { values: [row] },
+  });
+
+  console.log(`[Registry] Saved ${entry.reportNumber} → ts=${entry.messageTs}`);
+}
+
+export async function getRegistryEntry(messageTs: string): Promise<{ rowIndex: number; entry: RegistryEntry } | null> {
+  const sheets = await getUncachableGoogleSheetClient();
+  const spreadsheetId = getSheetId();
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'reports_registry!A:I',
+  });
+
+  const rows = res.data.values || [];
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i][0] === messageTs) {
+      return {
+        rowIndex: i + 1,
+        entry: {
+          messageTs:     rows[i][0] || '',
+          channelId:     rows[i][1] || '',
+          reportNumber:  rows[i][2] || '',
+          reporterPhone: rows[i][3] || '',
+          reporterName:  rows[i][4] || '',
+          reportType:    rows[i][5] || '',
+          status:        rows[i][6] || '',
+          createdAt:     rows[i][7] || '',
+          resolvedAt:    rows[i][8] || '',
+        },
+      };
+    }
+  }
+
+  return null;
+}
+
+export async function markRegistryResolved(messageTs: string): Promise<void> {
+  const sheets = await getUncachableGoogleSheetClient();
+  const spreadsheetId = getSheetId();
+
+  // Only read col A to find row index (faster)
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'reports_registry!A:A',
+  });
+
+  const rows = res.data.values || [];
+  let rowIndex = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i][0] === messageTs) {
+      rowIndex = i + 1;
+      break;
+    }
+  }
+
+  if (rowIndex === -1) {
+    console.warn(`[Registry] markResolved: ts=${messageTs} not found`);
+    return;
+  }
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `reports_registry!G${rowIndex}:G${rowIndex}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [['DONE']] },
+  });
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `reports_registry!I${rowIndex}:I${rowIndex}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[getWIBTimestamp()]] },
+  });
+
+  console.log(`[Registry] Marked DONE: ts=${messageTs}`);
+}
+
+// ─── Farmer Database ──────────────────────────────────────────────────────────
+
 export interface FarmerRecord {
   fgName: string;
   farmerName: string;

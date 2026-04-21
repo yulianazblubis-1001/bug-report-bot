@@ -12,6 +12,8 @@ import { postSlackThreadReply, getSlackUserName, addSlackReaction, postCreditLim
 import { addReportLog } from "./bot/activityLog";
 import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
+import * as reportRegistry from './bot/services/reportRegistry';
+import { getNextReportNumber } from './bot/services/reportCounter';
 
 export async function registerRoutes(
   httpServer: Server,
@@ -161,18 +163,35 @@ export async function registerRoutes(
 
         console.log(`[Slack Events] Found mapping for ${mapping.senderName} (${mapping.phoneNumber})`);
 
+        // Look up report number from durable registry first, fall back to SQLite mapping
+        let registryRecord: Awaited<ReturnType<typeof reportRegistry.get>> = null;
+        try {
+          registryRecord = await reportRegistry.get(itemTs);
+        } catch (regErr: any) {
+          console.warn(`[Slack Events] Registry lookup failed: ${regErr.message}`);
+        }
+
+        const reportNumber = registryRecord?.reportNumber || mapping.reportNumber || '';
+        const rnText = reportNumber ? ` dengan Report Number ${reportNumber}` : '';
+
+        // Duplicate-resolution guard — skip if already marked DONE in registry
+        if (registryRecord?.status === 'DONE') {
+          console.log(`[Slack Events] Already DONE in registry for ts=${itemTs} — skipping WA notification`);
+          return;
+        }
+
         if (mapping.reportType === 'creditTopUp') {
           if (reaction === "done") {
             try {
               if (mapping.requestId) {
                 await googleSheets.updateStatus(mapping.requestId, 'RESOLVED', 'Engineer', '');
               }
-              const rn = mapping.reportNumber ? ` (Report Number: ${mapping.reportNumber})` : '';
               await sendMessage(
                 mapping.phoneNumber,
-                `✅ Halo ${mapping.senderName}! Credit limit top up untuk ${mapping.farmerName || 'farmer'}${rn} sudah diproses! Silakan cek di app. 🙏\n\n_(Your credit limit top-up for ${mapping.farmerName || 'farmer'}${rn} has been processed! Please check in the app.)_`
+                `✅ Halo ${mapping.senderName}! Credit Limit Top Up${rnText} sudah diproses oleh tim.\n\n_(Your credit limit top-up${rnText} has been processed by the team.)_`
               );
               await postSlackThreadReply(channelId, itemTs, `✅ Credit limit top-up has been processed. WhatsApp notification sent to ${mapping.senderName}.`);
+              await reportRegistry.markResolved(itemTs);
               console.log(`[Slack Events] Credit limit resolved for ${mapping.phoneNumber}`);
             } catch (err: any) {
               console.error('[Slack Events] Error handling credit limit resolution:', err.message);
@@ -182,20 +201,20 @@ export async function registerRoutes(
         }
 
         if (reaction === "done") {
-          const rn = mapping.reportNumber ? ` (Report Number: ${mapping.reportNumber})` : '';
           await sendMessage(
             mapping.phoneNumber,
-            `Halo ${mapping.senderName}! Laporan kamu${rn} sudah ditandai DONE oleh tim. Masalahnya sudah diperbaiki, silakan coba lagi.\n\n_(Your report${rn} has been marked DONE. The issue has been fixed, please try again.)_`
+            `Halo ${mapping.senderName}! Laporan kamu${rnText} sudah ditandai DONE oleh tim. Masalahnya sudah diperbaiki, silakan coba lagi.\n\n_(Your report${rnText} has been marked DONE by the team. The issue has been fixed, please try again.)_`
           );
+          await reportRegistry.markResolved(itemTs);
           console.log(`[Slack Events] :done: -> notified ${mapping.phoneNumber}`);
         }
 
         if (reaction === "solve" || reaction === "solved") {
-          const rn = mapping.reportNumber ? ` (Report Number: ${mapping.reportNumber})` : '';
           await sendMessage(
             mapping.phoneNumber,
-            `Halo ${mapping.senderName}! Laporan kamu${rn} sudah SOLVED. Silakan cek ya.\n\n_(Your report${rn} has been SOLVED. Please check.)_`
+            `Halo ${mapping.senderName}! Laporan kamu${rnText} sudah SOLVED. Silakan cek ya.\n\n_(Your report${rnText} has been SOLVED. Please check.)_`
           );
+          await reportRegistry.markResolved(itemTs);
           console.log(`[Slack Events] :solve: -> notified ${mapping.phoneNumber}`);
         }
       }
@@ -268,19 +287,19 @@ export async function registerRoutes(
           const rowData = await googleSheets.findByRequestId(requestId);
           sheetReportNumber = rowData?.data?.reportNumber || '';
         } catch {}
-        const rnLabel = sheetReportNumber ? ` (Report Number: ${sheetReportNumber})` : '';
+        const rnText = sheetReportNumber ? ` dengan Report Number ${sheetReportNumber}` : '';
 
         if (status === 'REJECTED' && reporterPhone) {
           await sendMessage(
             reporterPhone,
-            `❌ Halo ${reporterName || ''}, permintaan credit limit top up untuk ${farmerName || 'farmer'}${rnLabel} ditolak.\n\nAlasan: ${reason}\n\nKamu bisa submit ulang dengan ketik *START*.\n\n_(Your credit limit top-up request for ${farmerName || 'farmer'}${rnLabel} was rejected. Reason: ${reason}. Type START to resubmit.)_`
+            `❌ Halo ${reporterName || ''}! Credit Limit Top Up${rnText} ditolak.\n\nAlasan: ${reason}\n\nKamu bisa submit ulang dengan ketik *START*.\n\n_(Your credit limit top-up${rnText} was rejected. Reason: ${reason}. Type START to resubmit.)_`
           );
         }
 
         if (status === 'APPROVED' && reporterPhone) {
           await sendMessage(
             reporterPhone,
-            `✅ Halo ${reporterName || ''}, permintaan credit limit top up untuk ${farmerName || 'farmer'}${rnLabel} sudah di-approve oleh ${reviewedBy || 'Ops'}.\n\nTim engineering akan segera memprosesnya.\n\n_(Your credit limit top-up request for ${farmerName || 'farmer'}${rnLabel} has been approved by ${reviewedBy || 'Ops'}.)_`
+            `✅ Halo ${reporterName || ''}! Credit Limit Top Up${rnText} disetujui oleh tim.\n\nTim engineering akan segera memprosesnya.\n\n_(Your credit limit top-up${rnText} has been approved by ${reviewedBy || 'Ops'}. The engineering team will process it soon.)_`
           );
         }
 
@@ -429,7 +448,11 @@ export async function registerRoutes(
         });
       }
 
-      // ── STEP 4: Post to Slack ──
+      // ── STEP 4: Generate Report Number ──
+      const reportNumber = await getNextReportNumber('CRD');
+      console.log(`[Form][${logId}] Report Number: ${reportNumber}`);
+
+      // ── STEP 5: Post to Slack ──
       console.log(`[Form][${logId}] Posting to Slack...`);
       const slackData: Record<string, any> = {
         requestId,
@@ -467,25 +490,40 @@ export async function registerRoutes(
       };
 
       let slackTs = '';
+      let slackChannel = '';
       try {
         const slackResult = await postCreditLimitToSlack(fakeSession, slackData, (ts, channel) => {
           slackTs = ts;
+          slackChannel = channel;
           sessionStore.storeSlackMapping(ts, channel, {
             phoneNumber: body.reporterPhone,
             senderName: profile.name,
             reportType: 'creditTopUp',
             requestId,
             farmerName: body.farmerName,
+            reportNumber,
           });
-        });
-        slackTs = slackResult.ts || '';
+        }, reportNumber);
+        slackTs = slackResult.ts || slackTs;
+        slackChannel = slackResult.channel || slackChannel;
         console.log(`[Form][${logId}] ✅ Slack posted (ts: ${slackTs})`);
+
+        if (slackTs && slackChannel) {
+          await reportRegistry.set({
+            messageTs:   slackTs,
+            channelId:   slackChannel,
+            reportNumber,
+            phone:       body.reporterPhone,
+            name:        profile.name,
+            type:        'credit',
+          });
+        }
       } catch (slackErr: any) {
         console.error(`[Form][${logId}] ERR_SLACK: ${slackErr.message}`);
         // Continue — Slack failure should not block the submission
       }
 
-      // ── STEP 5: Write to Google Sheets ──
+      // ── STEP 6: Write to Google Sheets ──
       console.log(`[Form][${logId}] Writing to Google Sheets...`);
       let farmerIncomeAndBusiness = '';
       if (isLargeFarmer) {
@@ -528,6 +566,7 @@ export async function registerRoutes(
         reviewDate: '',
         rejectionReason: '',
         slackMessageTs: slackTs,
+        reportNumber,
       };
 
       try {
@@ -543,7 +582,7 @@ export async function registerRoutes(
         });
       }
 
-      // ── STEP 6: Log activity ──
+      // ── STEP 7: Log activity ──
       addReportLog({
         type: 'creditTopUp',
         reporter: profile.name,
@@ -552,11 +591,11 @@ export async function registerRoutes(
         status: 'submitted',
       });
 
-      // ── STEP 7: Send WhatsApp notification ──
+      // ── STEP 8: Send WhatsApp notification ──
       try {
         await sendMessage(
           body.reporterPhone,
-          `✅ Halo ${profile.name}! Permintaan credit limit top up untuk ${body.farmerName} sudah dikirim via form.\n\nRequest ID: *${requestId}*\nTim Ops Excellence akan review permintaan kamu.\n\nKamu akan mendapat notifikasi saat di-approve atau di-reject.\n\n_(Credit Limit Top Up submitted via form. Request ID: ${requestId}.)_`
+          `✅ Halo ${profile.name}! Permintaan credit limit top up untuk ${body.farmerName} sudah dikirim via form.\n\nReport Number: *${reportNumber}*\nTim Ops Excellence akan review permintaan kamu.\n\nKamu akan mendapat notifikasi saat di-approve atau di-reject.\n\n_(Credit Limit Top Up submitted via form. Report Number: ${reportNumber}.)_`
         );
         console.log(`[Form][${logId}] ✅ WhatsApp notification sent`);
       } catch (waErr: any) {

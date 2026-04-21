@@ -9,6 +9,7 @@ import * as googleSheets from './services/google-sheets';
 import * as googleDrive from './services/google-drive';
 import { v4 as uuidv4 } from 'uuid';
 import { getNextReportNumber } from './services/reportCounter';
+import * as reportRegistry from './services/reportRegistry';
 
 function getWelcomeMsg(name: string): string {
   return `Halo ${name}!
@@ -439,7 +440,12 @@ async function submitReport(session: BotSession): Promise<void> {
     const typeCode = session.reportType === 'bug' ? 'BUG' : 'ADM';
     const reportNumber = await getNextReportNumber(typeCode);
 
+    let capturedTs = '';
+    let capturedChannel = '';
+
     await slack.postToSlack(session, (ts, channel) => {
+      capturedTs = ts;
+      capturedChannel = channel;
       sessionStore.storeSlackMapping(ts, channel, {
         phoneNumber: session.phoneNumber,
         senderName: displayName,
@@ -447,6 +453,17 @@ async function submitReport(session: BotSession): Promise<void> {
         reportNumber,
       });
     }, reportNumber);
+
+    if (capturedTs && capturedChannel) {
+      await reportRegistry.set({
+        messageTs:    capturedTs,
+        channelId:    capturedChannel,
+        reportNumber,
+        phone:        phoneNumber,
+        name:         displayName,
+        type:         session.reportType === 'bug' ? 'bug' : 'admin',
+      });
+    }
 
     const typeLabel = session.reportType === 'bug' ? 'Bug Report' : 'Admin Request';
     const report = session.parsedReport || {};
@@ -620,6 +637,17 @@ async function submitCreditLimitReport(session: BotSession): Promise<void> {
         reportNumber,
       });
     }, reportNumber);
+
+    if (slackResult?.ts && slackResult?.channel) {
+      await reportRegistry.set({
+        messageTs:    slackResult.ts,
+        channelId:    slackResult.channel,
+        reportNumber,
+        phone:        phoneNumber,
+        name:         displayName,
+        type:         'credit',
+      });
+    }
 
     let farmerIncomeAndBusiness = '';
     if (isLargeFarmer) {
