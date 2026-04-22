@@ -270,7 +270,7 @@ export async function registerRoutes(
             }
 
             const replyText = status === 'APPROVED'
-              ? `✅ Approved by ${reviewedBy || 'Ops'}. Engineers — please process this credit limit top-up. React with ✅ when done.`
+              ? `✅ Approved by ${reviewedBy || 'Ops'}. Engineers — please process this credit limit top-up. React with :done: when processed.`
               : `❌ Rejected by ${reviewedBy || 'Ops'}. Reason: ${reason}\nWhatsApp notification sent to ${reporterName || 'reporter'}.`;
 
             try {
@@ -306,6 +306,41 @@ export async function registerRoutes(
         }
 
         console.log(`[Sheet Update] ${status} ${requestId} by ${reviewedBy}${reason ? ': ' + reason : ''}`);
+      }
+
+      // ── RESOLVED / Resolved — sent when Ops or engineer marks the ticket as done ──
+      if (status.toUpperCase() === 'RESOLVED' && reporterPhone) {
+        // Guard: if the Slack :done: reaction already sent the WA (registry DONE), skip
+        let alreadyNotified = false;
+        if (slackTs) {
+          try {
+            const regEntry = await reportRegistry.get(slackTs);
+            if (regEntry?.status === 'DONE') {
+              alreadyNotified = true;
+              console.log(`[Sheet Update] RESOLVED ${requestId} — already notified via Slack event, skipping duplicate WA`);
+            }
+          } catch {}
+        }
+
+        if (!alreadyNotified) {
+          let resolvedReportNumber = '';
+          try {
+            const rowData = await googleSheets.findByRequestId(requestId);
+            resolvedReportNumber = rowData?.data?.reportNumber || '';
+          } catch {}
+          const rnTextRes = resolvedReportNumber ? ` dengan Report Number ${resolvedReportNumber}` : '';
+          const rnSubjectRes = resolvedReportNumber ? `Your Report Number ${resolvedReportNumber}` : 'Your credit limit top-up';
+
+          try {
+            await sendMessage(
+              reporterPhone,
+              `✅ Halo ${reporterName || ''}! Credit Limit Top Up${rnTextRes} sudah diproses oleh tim.\n\n_(${rnSubjectRes} has been processed by the team.)_`
+            );
+            console.log(`[Sheet Update] RESOLVED WA sent to ${reporterPhone} for ${requestId}`);
+          } catch (waErr: any) {
+            console.error(`[Sheet Update] RESOLVED WA failed for ${reporterPhone}: ${waErr.message}`);
+          }
+        }
       }
     } catch (err: any) {
       console.error("[Sheet Update] Error:", err.message);
