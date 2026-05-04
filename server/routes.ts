@@ -56,6 +56,10 @@ export async function registerRoutes(
   });
 
   async function webhookHandler(req: any, res: any) {
+    // Acknowledge immediately — WATI requires 200 within a few seconds
+    // or it marks the webhook as failing and will auto-disable it
+    res.status(200).json({ status: "received" });
+
     try {
       const body = req.body;
       const messageType = body.type || "text";
@@ -89,19 +93,14 @@ export async function registerRoutes(
 
       if (!phoneNumber) {
         console.warn("[Webhook] No phone number in payload:", JSON.stringify(body).substring(0, 200));
-        return res.status(200).json({ status: "ignored", reason: "no phone number" });
+        return;
       }
 
       console.log(`[Webhook] From ${phoneNumber} (${senderName}): type=${messageType}, text="${text}", mediaUrl=${mediaUrl}`);
 
-      res.status(200).json({ status: "received" });
-
       await handleMessage(phoneNumber, senderName, text, messageType, mediaUrl);
     } catch (err: any) {
       console.error("[Webhook] Error:", err);
-      if (!res.headersSent) {
-        res.status(200).json({ status: "error", message: err.message });
-      }
     }
   }
 
