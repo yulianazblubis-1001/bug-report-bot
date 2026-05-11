@@ -377,14 +377,27 @@ export async function registerRoutes(
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
   });
 
+  const creditLimitUpload = upload.fields([
+    { name: 'docSignedSO', maxCount: 20 },
+    { name: 'docFarmerHolding', maxCount: 20 },
+    { name: 'docLandOwnership', maxCount: 20 },
+    { name: 'docJaminan', maxCount: 20 },
+    { name: 'docSurveyPhotoTM', maxCount: 20 },
+  ]);
+
   // POST credit limit form submission
-  app.post("/api/credit-limit/submit", upload.fields([
-    { name: 'docSignedSO', maxCount: 5 },
-    { name: 'docFarmerHolding', maxCount: 5 },
-    { name: 'docLandOwnership', maxCount: 5 },
-    { name: 'docJaminan', maxCount: 5 },
-    { name: 'docSurveyPhotoTM', maxCount: 5 },
-  ]), async (req: any, res: any) => {
+  app.post("/api/credit-limit/submit", (req: any, res: any, next: any) => {
+    creditLimitUpload(req, res, (err: any) => {
+      if (err) {
+        console.error(`[Form] Multer error: ${err.code} — ${err.message} (field: ${err.field || 'unknown'})`);
+        return res.status(400).json({
+          error: err.message || 'File upload error',
+          code: err.code || 'ERR_UPLOAD',
+        });
+      }
+      next();
+    });
+  }, async (req: any, res: any) => {
     const startTime = Date.now();
     const logId = uuidv4().substring(0, 6).toUpperCase();
 
