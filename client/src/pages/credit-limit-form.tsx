@@ -79,6 +79,37 @@ const INITIAL_FILES: FormFiles = {
   docSurveyPhotoTM: [],
 };
 
+async function compressImage(file: File, maxPx = 1920, quality = 0.82): Promise<File> {
+  if (!file.type.startsWith('image/')) return file;
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const { width, height } = img;
+      const ratio = Math.min(1, maxPx / width, maxPx / height);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            const name = file.name.replace(/\.[^.]+$/, '.jpg');
+            resolve(new File([blob], name, { type: 'image/jpeg' }));
+          } else {
+            resolve(file);
+          }
+        },
+        'image/jpeg',
+        quality
+      );
+    };
+    img.src = url;
+  });
+}
+
 function ComboboxField({
   label,
   value,
@@ -383,21 +414,29 @@ export default function CreditLimitForm() {
         if (value) formData.append(key, value);
       });
 
-      // Add files (multiple per category)
-      Object.entries(files).forEach(([key, fileList]) => {
+      // Compress images then add files
+      for (const [key, fileList] of Object.entries(files)) {
         if (Array.isArray(fileList)) {
-          fileList.forEach((file: File) => {
-            formData.append(key, file);
-          });
+          for (const file of fileList) {
+            const compressed = await compressImage(file);
+            formData.append(key, compressed);
+          }
         }
-      });
+      }
 
       const res = await fetch("/api/credit-limit/submit", {
         method: "POST",
         body: formData,
       });
 
-      const data = await res.json();
+      // Read as text first to avoid unreadable JSON parse errors
+      const text = await res.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Server error (HTTP ${res.status}): ${text.substring(0, 300)}`);
+      }
 
       if (res.ok && data.success) {
         setResult({
