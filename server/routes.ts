@@ -437,51 +437,60 @@ export async function registerRoutes(
       const timestamp = getWIBTimestamp();
       const isLargeFarmer = body.creditLimitType === 'largeFarmer';
 
-      // ── STEP 3: Upload ALL documents to Google Drive ──
+      // ── STEP 3: Upload ALL documents to Google Drive (parallel) ──
       console.log(`[Form][${logId}] Uploading documents to Google Drive...`);
       const driveUrls: Record<string, string> = {};
       const uploadErrors: string[] = [];
       const docFields = ['docSignedSO', 'docFarmerHolding', 'docLandOwnership', 'docJaminan', 'docSurveyPhotoTM'];
 
+      // Build flat list of all upload tasks
+      type UploadTask = { fieldName: string; index: number; file: any; fileName: string };
+      const uploadTasks: UploadTask[] = [];
       for (const fieldName of docFields) {
         const fileArr = files[fieldName];
         if (fileArr && fileArr.length > 0) {
-          const urls: string[] = [];
-          for (let i = 0; i < fileArr.length; i++) {
-            const file = fileArr[i];
+          fileArr.forEach((file: any, i: number) => {
             const ext = file.originalname.split('.').pop() || 'jpg';
-            const fileName = `${requestId}_${fieldName}_${i + 1}.${ext}`;
+            uploadTasks.push({ fieldName, index: i, file, fileName: `${requestId}_${fieldName}_${i + 1}.${ext}` });
+          });
+        }
+      }
 
-            // Retry up to 2 times for Drive upload
-            let driveUrl: string | null = null;
+      const totalFiles = uploadTasks.length;
+      if (totalFiles > 0) {
+        // Pre-create subfolder once to avoid race conditions on parallel upload
+        const { drive: sharedDrive, folderId: subFolderId } = await googleDrive.ensureRequestSubfolder(requestId);
+
+        // Upload all files in parallel (with 1 retry each)
+        const results = await Promise.allSettled(
+          uploadTasks.map(async ({ fieldName, file, fileName }) => {
             for (let attempt = 1; attempt <= 2; attempt++) {
               try {
                 console.log(`[Form][${logId}] Uploading ${fileName} (${(file.size / 1024).toFixed(0)} KB) attempt ${attempt}...`);
-                driveUrl = await googleDrive.uploadToDrive(file.buffer, fileName, file.mimetype, requestId);
-                console.log(`[Form][${logId}] ✅ ${fileName} → ${driveUrl}`);
-                break;
+                const url = await googleDrive.uploadFileToFolder(sharedDrive, file.buffer, fileName, file.mimetype, subFolderId);
+                console.log(`[Form][${logId}] ✅ ${fileName} → ${url}`);
+                return { fieldName, url };
               } catch (err: any) {
                 console.error(`[Form][${logId}] ❌ Upload failed (attempt ${attempt}): ${fileName} — ${err.message}`);
-                if (attempt === 2) {
-                  uploadErrors.push(`${fieldName}_${i + 1}: ${err.message}`);
-                }
+                if (attempt === 2) throw new Error(`${fileName}: ${err.message}`);
               }
             }
+          })
+        );
 
-            if (driveUrl) {
-              urls.push(driveUrl);
-            }
-          }
-          if (urls.length > 0) {
-            driveUrls[fieldName] = urls.join('\n');
+        // Aggregate results preserving field order
+        for (const res of results) {
+          if (res.status === 'fulfilled' && res.value) {
+            const { fieldName, url } = res.value;
+            driveUrls[fieldName] = driveUrls[fieldName] ? `${driveUrls[fieldName]}\n${url}` : url;
+          } else if (res.status === 'rejected') {
+            uploadErrors.push(res.reason?.message || 'Unknown upload error');
           }
         }
       }
 
-      // Count uploaded files
-      const totalFiles = docFields.reduce((sum, f) => sum + (files[f]?.length || 0), 0);
       const uploadedFiles = Object.values(driveUrls).reduce((sum, urls) => sum + urls.split('\n').length, 0);
-      console.log(`[Form][${logId}] Drive upload: ${uploadedFiles}/${totalFiles} files uploaded`);
+      console.log(`[Form][${logId}] Drive upload: ${uploadedFiles}/${totalFiles} files uploaded (parallel)`);
 
       if (uploadErrors.length > 0) {
         console.error(`[Form][${logId}] ERR_DRIVE_UPLOAD: ${uploadErrors.length} file(s) failed: ${uploadErrors.join('; ')}`);

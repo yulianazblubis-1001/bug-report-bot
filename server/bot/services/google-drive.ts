@@ -97,12 +97,34 @@ export async function uploadToDrive(
     ? await getOrCreateSubfolder(drive, folderId, requestId)
     : folderId;
 
+  return uploadFileToFolder(drive, fileBuffer, fileName, mimeType, targetFolderId);
+}
+
+/**
+ * Pre-create (or reuse) the per-request subfolder once, then upload all
+ * files in parallel using uploadFileToFolder().
+ */
+export async function ensureRequestSubfolder(requestId: string): Promise<{ drive: any; folderId: string }> {
+  const parentId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  if (!parentId) throw new Error('GOOGLE_DRIVE_FOLDER_ID not set');
+  const drive = await getUncachableDriveClient();
+  const folderId = await getOrCreateSubfolder(drive, parentId, requestId);
+  return { drive, folderId };
+}
+
+export async function uploadFileToFolder(
+  drive: any,
+  fileBuffer: Buffer,
+  fileName: string,
+  mimeType: string,
+  folderId: string
+): Promise<string> {
   const stream = Readable.from(fileBuffer);
 
   const uploadRes = await drive.files.create({
     requestBody: {
       name: fileName,
-      parents: [targetFolderId],
+      parents: [folderId],
     },
     media: {
       mimeType,
