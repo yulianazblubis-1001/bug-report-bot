@@ -6,3 +6,9 @@ id = "6s7LCNT5gmikIItbbUOhu"
 uri = "file://whitelist.md"
 type = "text"
 title = "Whitelisted Agronomists (78 people)"
+
+[[outputs]]
+id = "S6a8RqEactNSvHaYN6S4c"
+uri = "file://whitelist.csv"
+type = "table"
+title = "Bot Whitelist — 79 Agronomists"
