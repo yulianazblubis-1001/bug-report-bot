@@ -149,7 +149,7 @@ A WhatsApp chatbot that guides Rize.farm agronomists through bug reports, admin 
 ## Technical Notes
 - WATI sendSessionMessage uses query param `messageText`, not JSON body
 - WATI_TOKEN value already includes "Bearer " prefix — do NOT add another
-- Claude Sonnet 4 for all conversation types (bug, admin, creditTopUp)
+- Claude Sonnet 4.5 (`claude-sonnet-4-5`) for all conversation types (bug, admin, creditTopUp)
 - Sessions auto-expire after 30 minutes of inactivity
 - Trigger keywords: BUG, REPORT, ADMIN, REQUEST, START, MULAI, MENU, LAPOR
 - Google Apps Script: paste `google-apps-script.js` content into Sheet's Apps Script editor

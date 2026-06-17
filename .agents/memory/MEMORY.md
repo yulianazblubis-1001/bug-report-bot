@@ -1,0 +1,1 @@
+- [Claude model name](claude-model-name.md) — use claude-sonnet-4-5, NOT claude-sonnet-4-20250514 (date-suffix format is invalid for Claude 4)

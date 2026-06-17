@@ -353,12 +353,16 @@ export async function evaluateReport(
 
     const messages = buildMessages(conversation);
 
+    console.log('[Claude] Calling API — type:', reportType, '| followUpCount:', followUpCount, '| msgs:', messages.length);
+
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-5',
       max_tokens: 1024,
       system: systemPrompt + contextNote,
       messages,
     });
+
+    console.log('[Claude] API ok — stop_reason:', response.stop_reason);
 
     const rawText = (response.content[0] as any).text.trim();
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
