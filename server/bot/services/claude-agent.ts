@@ -364,11 +364,13 @@ export async function evaluateReport(
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.warn('[Claude] No JSON found in response:', rawText.substring(0, 200));
-      if (reportType === 'creditTopUp' && followUpCount < maxFollowUps) {
-        console.log('[Claude] Treating plain text as follow-up question for creditTopUp');
+      if (followUpCount < maxFollowUps) {
+        const fallbackQuestion = reportType === 'creditTopUp'
+          ? rawText
+          : 'Maaf, ada gangguan teknis. Bisa ulangi penjelasan masalahnya?\n\n---\n\nSorry, technical issue. Could you repeat the description of the problem?';
         return {
           status: 'need_more_info',
-          followUpQuestion: rawText,
+          followUpQuestion: fallbackQuestion,
           parsedReport: {},
         };
       }
@@ -416,11 +418,21 @@ export async function evaluateReport(
     };
   } catch (err: any) {
     console.error('[Claude] Error:', err.message);
+    const isLargeFarmerFallback = creditLimitType === 'largeFarmer';
+    const maxFollowUpsFallback = reportType === 'creditTopUp' ? (isLargeFarmerFallback ? 12 : 8) : 5;
+    if (followUpCount < maxFollowUpsFallback) {
+      console.warn('[Claude] Returning need_more_info due to error (followUpCount < max)');
+      return {
+        status: 'need_more_info',
+        followUpQuestion: 'Maaf, ada gangguan teknis sementara. Bisa kirim ulang pesan kamu?\n\n---\n\nSorry, temporary technical issue. Could you resend your message?',
+        parsedReport: {},
+      };
+    }
     const originalText = conversation.filter((m) => m.role === 'user').map((m) => m.text).join('\n');
     return {
       status: 'ready',
       parsedReport: {
-        title: '[Other] Report (AI error)',
+        title: '[Other] Report (incomplete)',
         description: originalText,
         category: 'Other',
         originalText,

@@ -321,6 +321,40 @@ export async function handleMessage(
         }
       }
 
+      if (currentSession.reportType === 'bug' && currentSession.followUpCount < maxFollowUps) {
+        const r = currentSession.parsedReport || {};
+        const missingFields: string[] = [];
+        if (!r.pgName) missingFields.push('PG Name');
+        if (!r.stepsToReproduce) missingFields.push('Steps to Reproduce');
+        if (!r.appVersion) missingFields.push('App Version');
+        if (!r.platform) missingFields.push('Platform (Android/iOS/Web)');
+        if (currentSession.mediaUrls.length === 0) missingFields.push('Screenshot/Video');
+
+        if (missingFields.length > 0) {
+          const askFor = missingFields.slice(0, 3);
+          let question = `Masih ada info yang kurang:\n`;
+          if (askFor.includes('PG Name')) question += `- PG siapa?\n`;
+          if (askFor.includes('Steps to Reproduce')) question += `- Langkah-langkah sebelum error terjadi?\n`;
+          if (askFor.includes('App Version')) question += `- Versi app? (cek di Settings)\n`;
+          if (askFor.includes('Platform (Android/iOS/Web)')) question += `- Platform: Android, iOS, atau Web?\n`;
+          if (askFor.includes('Screenshot/Video')) question += `- Tolong kirim screenshot atau video.\n`;
+          question += `\n---\n\nSome info is still missing:\n`;
+          if (askFor.includes('PG Name')) question += `- Which PG is this about?\n`;
+          if (askFor.includes('Steps to Reproduce')) question += `- Steps to reproduce the issue?\n`;
+          if (askFor.includes('App Version')) question += `- App version? (check in Settings)\n`;
+          if (askFor.includes('Platform (Android/iOS/Web)')) question += `- Platform: Android, iOS, or Web?\n`;
+          if (askFor.includes('Screenshot/Video')) question += `- Please send a screenshot or video.\n`;
+
+          currentSession.followUpCount++;
+          currentSession.conversation.push({
+            role: 'assistant',
+            text: question.trim(),
+          });
+          await wati.sendMessage(phoneNumber, question.trim());
+          return;
+        }
+      }
+
       currentSession.step = 'CONFIRMING';
       const summary = currentSession.reportType === 'creditTopUp'
         ? buildCreditLimitSummary(currentSession)
