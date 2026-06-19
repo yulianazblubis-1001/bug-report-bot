@@ -141,6 +141,13 @@ function buildBugReportBlocks(session: BotSession, reportNumber?: string): any[]
     text: { type: 'mrkdwn', text: `*Additional Info:* ${report.additionalInfo || '—'}` },
   });
 
+  if (report.originalText) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `_Original: ${report.originalText}_` }],
+    });
+  }
+
   blocks.push({ type: 'divider' });
 
   blocks.push(buildMediaLine(session.mediaUrls.length));
@@ -229,6 +236,13 @@ function buildAdminRequestBlocks(session: BotSession, reportNumber?: string): an
     type: 'section',
     text: { type: 'mrkdwn', text: `*Additional Info:* ${report.additionalInfo || '—'}` },
   });
+
+  if (report.originalText) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `_Original: ${report.originalText}_` }],
+    });
+  }
 
   blocks.push({ type: 'divider' });
 
