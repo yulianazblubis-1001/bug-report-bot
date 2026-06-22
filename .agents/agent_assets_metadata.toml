@@ -12,3 +12,9 @@ id = "S6a8RqEactNSvHaYN6S4c"
 uri = "file://whitelist.csv"
 type = "table"
 title = "Bot Whitelist — 88 Agronomists"
+
+[[outputs]]
+id = "yrejgkRBTEGTkpBaPp0ZI"
+uri = "file://credit-limit-feature-reference.md"
+type = "text"
+title = "Credit Limit Top-Up — Feature Reference"
