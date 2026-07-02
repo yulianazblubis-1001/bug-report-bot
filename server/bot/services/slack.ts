@@ -747,12 +747,9 @@ export async function postToSlack(
 
   const botToken = process.env.SLACK_BOT_TOKEN;
 
-  const testChannel = process.env.SLACK_CHANNEL_PRIORITY_TEST;
-  const normalChannelId = session.reportType === 'bug'
+  const channelId = session.reportType === 'bug'
     ? process.env.SLACK_CHANNEL_BUG
     : process.env.SLACK_CHANNEL_ADMIN;
-
-  const channelId = (priority === 'P0' && testChannel) ? testChannel : normalChannelId;
 
   if (botToken && channelId) {
     try {
