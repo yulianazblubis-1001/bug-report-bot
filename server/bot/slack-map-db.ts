@@ -21,6 +21,7 @@ export interface SlackMappingRow {
   summary?: string;
   requestId?: string;
   farmerName?: string;
+  reportNumber?: string;
 }
 
 export async function ensureTable(): Promise<void> {
@@ -34,9 +35,11 @@ export async function ensureTable(): Promise<void> {
       summary TEXT,
       request_id TEXT,
       farmer_name TEXT,
+      report_number TEXT,
       stored_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()) * 1000
     )
   `);
+  await db.query(`ALTER TABLE slack_mappings ADD COLUMN IF NOT EXISTS report_number TEXT`);
   console.log('[SlackMapDB] Table ready');
 }
 
@@ -44,8 +47,8 @@ export async function storeMapping(slackTs: string, channelId: string, data: Sla
   const db = getPool();
   const key = `${channelId}:${slackTs}`;
   await db.query(
-    `INSERT INTO slack_mappings (key, phone_number, sender_name, report_type, summary, request_id, farmer_name, stored_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO slack_mappings (key, phone_number, sender_name, report_type, summary, request_id, farmer_name, report_number, stored_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (key) DO UPDATE SET
        phone_number = EXCLUDED.phone_number,
        sender_name = EXCLUDED.sender_name,
@@ -53,10 +56,23 @@ export async function storeMapping(slackTs: string, channelId: string, data: Sla
        summary = EXCLUDED.summary,
        request_id = EXCLUDED.request_id,
        farmer_name = EXCLUDED.farmer_name,
+       report_number = EXCLUDED.report_number,
        stored_at = EXCLUDED.stored_at`,
-    [key, data.phoneNumber, data.senderName, data.reportType, data.summary || null, data.requestId || null, data.farmerName || null, Date.now()]
+    [key, data.phoneNumber, data.senderName, data.reportType, data.summary || null, data.requestId || null, data.farmerName || null, data.reportNumber || null, Date.now()]
   );
-  console.log(`[SlackMapDB] Stored mapping for ${data.senderName} (${data.reportType}) key=${key}`);
+  console.log(`[SlackMapDB] Stored mapping for ${data.senderName} (${data.reportType}) key=${key} reportNumber=${data.reportNumber || '—'}`);
+}
+
+function rowToMapping(row: any): SlackMappingRow {
+  return {
+    phoneNumber: row.phone_number,
+    senderName: row.sender_name,
+    reportType: row.report_type,
+    summary: row.summary,
+    requestId: row.request_id,
+    farmerName: row.farmer_name,
+    reportNumber: row.report_number || undefined,
+  };
 }
 
 export async function getMapping(slackTs: string, channelId: string): Promise<SlackMappingRow | null> {
@@ -69,14 +85,16 @@ export async function getMapping(slackTs: string, channelId: string): Promise<Sl
   }
   const row = res.rows[0];
   console.log(`[SlackMapDB] Found mapping for key=${key}: ${row.sender_name} (${row.report_type})`);
-  return {
-    phoneNumber: row.phone_number,
-    senderName: row.sender_name,
-    reportType: row.report_type,
-    summary: row.summary,
-    requestId: row.request_id,
-    farmerName: row.farmer_name,
-  };
+  return rowToMapping(row);
+}
+
+export async function findMappingByTs(slackTs: string): Promise<SlackMappingRow | null> {
+  const db = getPool();
+  const res = await db.query(`SELECT * FROM slack_mappings WHERE key LIKE '%:' || $1 LIMIT 1`, [slackTs]);
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  console.log(`[SlackMapDB] findMappingByTs fallback found: key=${row.key} ${row.sender_name} (${row.report_type})`);
+  return rowToMapping(row);
 }
 
 export async function findMappingByRequestId(requestId: string): Promise<{ key: string; mapping: SlackMappingRow } | null> {

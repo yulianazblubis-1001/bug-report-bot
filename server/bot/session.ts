@@ -1,4 +1,4 @@
-import { ensureTable, storeMapping, getMapping, findMappingByRequestId, pruneOldMappings } from './slack-map-db';
+import { ensureTable, storeMapping, getMapping, findMappingByTs, findMappingByRequestId, pruneOldMappings } from './slack-map-db';
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -115,6 +115,15 @@ class SessionStore {
       return await getMapping(slackTs, channelId);
     } catch (err: any) {
       console.error('[SessionStore] Failed to get Slack mapping:', err.message);
+      return null;
+    }
+  }
+
+  async findSlackMappingByTs(slackTs: string): Promise<SlackMapping | null> {
+    try {
+      return await findMappingByTs(slackTs);
+    } catch (err: any) {
+      console.error('[SessionStore] Failed to find mapping by ts:', err.message);
       return null;
     }
   }

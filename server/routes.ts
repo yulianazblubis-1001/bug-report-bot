@@ -154,15 +154,21 @@ export async function registerRoutes(
 
         if (!itemTs || !channelId) return;
 
-        const mapping = await sessionStore.getSlackMapping(itemTs, channelId);
+        // Primary lookup by channelId:ts key; fall back to ts-only search
+        // to handle any channel ID mismatch between stored and event-delivered values
+        let mapping = await sessionStore.getSlackMapping(itemTs, channelId);
         if (!mapping) {
-          console.log(`[Slack Events] No mapping found for ${channelId}:${itemTs}`);
+          console.log(`[Slack Events] Primary lookup miss for ${channelId}:${itemTs} — trying ts-only fallback`);
+          mapping = await sessionStore.findSlackMappingByTs(itemTs);
+        }
+        if (!mapping) {
+          console.log(`[Slack Events] No mapping found for ts=${itemTs} in any channel — ignoring`);
           return;
         }
 
-        console.log(`[Slack Events] Found mapping for ${mapping.senderName} (${mapping.phoneNumber})`);
+        console.log(`[Slack Events] Found mapping for ${mapping.senderName} (${mapping.phoneNumber}) type=${mapping.reportType}`);
 
-        // Look up report number from durable registry first, fall back to SQLite mapping
+        // Look up report number from durable registry first, fall back to DB mapping
         let registryRecord: Awaited<ReturnType<typeof reportRegistry.get>> = null;
         try {
           registryRecord = await reportRegistry.get(itemTs);
@@ -180,19 +186,20 @@ export async function registerRoutes(
           return;
         }
 
+        // ── Credit Limit Top Up ──────────────────────────────────────────────────
         if (mapping.reportType === 'creditTopUp') {
-          if (reaction === "done") {
+          if (reaction === "done" || reaction === "white_check_mark") {
             try {
               if (mapping.requestId) {
                 await googleSheets.updateStatus(mapping.requestId, 'RESOLVED', 'Engineer', '');
               }
               await sendMessage(
                 mapping.phoneNumber,
-                `✅ Halo ${mapping.senderName}! Credit Limit Top Up${rnTextID} sudah diproses oleh tim.\n\n_(${rnSubjectEN} has been processed by the team.)_`
+                `✅ Halo ${mapping.senderName}! Credit Limit Top Up${rnTextID} sudah diproses oleh tim.\n\nHi ${mapping.senderName}! ${rnSubjectEN} has been processed by the team.`
               );
               await postSlackThreadReply(channelId, itemTs, `✅ Credit limit top-up has been processed. WhatsApp notification sent to ${mapping.senderName}.`);
               await reportRegistry.markResolved(itemTs);
-              console.log(`[Slack Events] Credit limit resolved for ${mapping.phoneNumber}`);
+              console.log(`[EMOJI_REPLY] reportNumber: ${reportNumber} emoji: ${reaction} reportType: creditTopUp replySent: resolved`);
             } catch (err: any) {
               console.error('[Slack Events] Error handling credit limit resolution:', err.message);
             }
@@ -200,22 +207,43 @@ export async function registerRoutes(
           return;
         }
 
-        if (reaction === "done") {
-          await sendMessage(
-            mapping.phoneNumber,
-            `Halo ${mapping.senderName}! Laporan kamu${rnTextID} sudah ditandai DONE oleh tim. Masalahnya sudah diperbaiki, silakan coba lagi.\n\n_(${rnSubjectEN} has been marked DONE by the team. The issue has been fixed, please try again.)_`
-          );
+        // ── Bug Report & Admin Request ───────────────────────────────────────────
+        const RESOLVED_EMOJIS = ['done', 'white_check_mark', 'solve', 'solved'];
+        const REJECTED_EMOJIS = ['x', 'notabug-1'];
+
+        if (RESOLVED_EMOJIS.includes(reaction)) {
+          let waMsg: string;
+          if (mapping.reportType === 'admin') {
+            waMsg =
+              `Halo ${mapping.senderName}! Request kamu${rnTextID} sudah ditandai DONE oleh tim. Permintaanmu sudah diproses.\n\n` +
+              `Hi ${mapping.senderName}! ${rnSubjectEN} has been marked DONE by the team. Your request has been processed.`;
+          } else {
+            waMsg =
+              `Halo ${mapping.senderName}! Laporan kamu${rnTextID} sudah ditandai DONE oleh tim. Masalahnya sudah diperbaiki, silakan coba lagi.\n\n` +
+              `Hi ${mapping.senderName}! ${rnSubjectEN} has been marked DONE by the team. The issue has been fixed, please try again.`;
+          }
+          await sendMessage(mapping.phoneNumber, waMsg);
           await reportRegistry.markResolved(itemTs);
-          console.log(`[Slack Events] :done: -> notified ${mapping.phoneNumber}`);
+          console.log(`[EMOJI_REPLY] reportNumber: ${reportNumber} emoji: ${reaction} reportType: ${mapping.reportType} replySent: resolved`);
+          return;
         }
 
-        if (reaction === "solve" || reaction === "solved") {
-          await sendMessage(
-            mapping.phoneNumber,
-            `Halo ${mapping.senderName}! Laporan kamu${rnTextID} sudah SOLVED. Silakan cek ya.\n\n_(${rnSubjectEN} has been SOLVED. Please check.)_`
-          );
-          await reportRegistry.markResolved(itemTs);
-          console.log(`[Slack Events] :solve: -> notified ${mapping.phoneNumber}`);
+        if (REJECTED_EMOJIS.includes(reaction)) {
+          let waMsg: string;
+          if (mapping.reportType === 'admin') {
+            waMsg =
+              `Halo ${mapping.senderName}! Request kamu${rnTextID} ditolak oleh tim.\n\n` +
+              `Hi ${mapping.senderName}! ${rnSubjectEN} has been rejected by the team.`;
+          } else {
+            waMsg =
+              `Halo ${mapping.senderName}! Laporan kamu${rnTextID} ditandai sebagai BUKAN BUG oleh tim. ` +
+              `Silakan cek kembali langkah-langkahnya, pastikan semua field wajib sudah diisi, atau hubungi tim produk via WhatsApp support channel.\n\n` +
+              `Hi ${mapping.senderName}! ${rnSubjectEN} has been marked as NOT A BUG by the team. ` +
+              `Please retry, make sure all mandatory fields are filled, or contact the product team via the WhatsApp support channel.`;
+          }
+          await sendMessage(mapping.phoneNumber, waMsg);
+          console.log(`[EMOJI_REPLY] reportNumber: ${reportNumber} emoji: ${reaction} reportType: ${mapping.reportType} replySent: rejected`);
+          return;
         }
       }
 
