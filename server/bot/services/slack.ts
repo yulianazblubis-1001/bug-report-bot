@@ -160,6 +160,26 @@ function buildBugReportBlocks(session: BotSession, reportNumber?: string): any[]
   return blocks;
 }
 
+function isFarmerPhoneChangeRequest(report: Record<string, any>): { matched: boolean; keywordsHit: string[] } {
+  const category = (report.category || '').toLowerCase();
+  if (category !== 'farmer data') {
+    return { matched: false, keywordsHit: [] };
+  }
+
+  const haystack = `${report.title || ''} ${report.description || ''}`.toLowerCase();
+
+  const phoneKeywords = ['phone number', 'whatsapp number', 'wa number', 'phone no', 'hp number'];
+  const changeKeywords = ['change', 'update', 'new', 'edit', 'modify', 'replace'];
+
+  const hitPhone = phoneKeywords.filter(kw => haystack.includes(kw));
+  const hitChange = changeKeywords.filter(kw => haystack.includes(kw));
+
+  const matched = hitPhone.length > 0 && hitChange.length > 0;
+  const keywordsHit = [...hitPhone, ...hitChange];
+
+  return { matched, keywordsHit };
+}
+
 function buildAdminRequestBlocks(session: BotSession, reportNumber?: string): any[] {
   const report = session.parsedReport || {};
   const profile = session.profile;
@@ -167,7 +187,19 @@ function buildAdminRequestBlocks(session: BotSession, reportNumber?: string): an
 
   const title = report.title || '[Admin Request] Request';
 
-  const blocks: any[] = [
+  const { matched: mentionMeisisko, keywordsHit } = isFarmerPhoneChangeRequest(report);
+  console.log('[MEISISKO_MENTION] category:', report.category || '—', '| matched:', mentionMeisisko, '| keywords_hit:', keywordsHit);
+
+  const blocks: any[] = [];
+
+  if (mentionMeisisko) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `<@U0AAVDJHD62> — farmer phone number change request` },
+    });
+  }
+
+  blocks.push(
     {
       type: 'header',
       text: { type: 'plain_text', text: title, emoji: false },
@@ -199,7 +231,7 @@ function buildAdminRequestBlocks(session: BotSession, reportNumber?: string): an
         },
       ],
     },
-  ];
+  );
 
   if (report.accountAffected) {
     blocks.push({
