@@ -106,6 +106,13 @@ export async function handleMessage(
   const upperText = cleanText.toUpperCase();
 
   const TRIGGER_KEYWORDS = ['BUG', 'REPORT', 'ADMIN', 'REQUEST', 'START', 'MULAI', 'MENU', 'LAPOR'];
+  const EXCLUDED_PHRASES = ['MULAI ISI'];
+
+  const isExcluded = EXCLUDED_PHRASES.some(phrase => upperText.startsWith(phrase));
+  if (isExcluded) {
+    console.log(`[Router] Ignoring excluded phrase from ${phoneNumber}: "${cleanText.substring(0, 50)}"`);
+    return;
+  }
 
   if (!isWhitelisted(phoneNumber)) {
     const isTrigger = TRIGGER_KEYWORDS.some(kw => upperText.includes(kw));
