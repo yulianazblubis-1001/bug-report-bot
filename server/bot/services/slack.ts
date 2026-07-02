@@ -39,17 +39,84 @@ function buildMediaLine(mediaCount: number): any {
   };
 }
 
-function buildBugReportBlocks(session: BotSession, reportNumber?: string): any[] {
+interface PriorityResult {
+  priority: 'P0' | null;
+  reason: string;
+}
+
+function detectPriority(report: Record<string, any>): PriorityResult {
+  const text = [
+    report.title || '',
+    report.description || '',
+    report.errorDetails || '',
+    report.additionalInfo || '',
+    report.stepsToReproduce || '',
+  ].join(' ').toLowerCase();
+
+  const rules: Array<{ name: string; test: () => boolean }> = [
+    {
+      name: 'server_down_or_login_blocked',
+      test: () => /server\s*down|service\s*down|can'?t\s*login|cannot\s*login|unable\s*to\s*login|login\s*fail|tidak\s*bisa\s*login|gagal\s*login/.test(text),
+    },
+    {
+      name: 'collection_zero_or_no_data',
+      test: () =>
+        /collection/.test(text) &&
+        /shows?\s*0\b|no\s*data|empty|zero|\b0\s*data|tidak\s*ada\s*data|tidak\s*muncul/.test(text),
+    },
+    {
+      name: 'credit_limit_zero',
+      test: () =>
+        /credit\s*limit/.test(text) &&
+        /\bshows?\s*0\b|\bbecomes?\s*0\b|\b0\b.*limit|limit.*\b0\b|menjadi\s*0/.test(text),
+    },
+    {
+      name: 'cannot_generate_va',
+      test: () =>
+        /(generate|create|buat)\s*(va|virtual\s*account)|(va|virtual\s*account).*(fail|error|tidak\s*bisa|can'?t|cannot|gagal)/.test(text),
+    },
+    {
+      name: 'invoice_not_found',
+      test: () =>
+        /invoice/.test(text) &&
+        /(not\s*found|tidak\s*ada|tidak\s*muncul|hilang|missing)/.test(text),
+    },
+    {
+      name: 'invoice_payment_discrepancy',
+      test: () =>
+        /invoice/.test(text) &&
+        /(discrepan|still\s*unpaid|belum\s*terbayar|sudah\s*bayar|harusnya\s*lunas|payment\s*status|status\s*pembayaran|seharusnya\s*lunas)/.test(text),
+    },
+    {
+      name: 'transaction_or_payment_blocked',
+      test: () =>
+        /(can'?t|cannot|tidak\s*bisa|gagal)\s*(transact|payment|collect|pay|bayar|tagih|submit\s*collect|generate\s*invoice)/.test(text) ||
+        /(collect(ion)?|payment|transaksi).*(tidak\s*bisa|gagal|blocked|error|fail)/.test(text),
+    },
+  ];
+
+  for (const rule of rules) {
+    if (rule.test()) {
+      return { priority: 'P0', reason: rule.name };
+    }
+  }
+
+  return { priority: null, reason: '' };
+}
+
+function buildBugReportBlocks(session: BotSession, reportNumber?: string, priority?: 'P0' | null): any[] {
   const report = session.parsedReport || {};
   const profile = session.profile;
   const timestamp = getWIBTimestamp();
 
-  const title = report.title || '[Other] Bug Report';
+  const title = priority === 'P0'
+    ? `🔴 P0 — ${report.title || '[Other] Bug Report'}`
+    : (report.title || '[Other] Bug Report');
 
   const blocks: any[] = [
     {
       type: 'header',
-      text: { type: 'plain_text', text: title, emoji: false },
+      text: { type: 'plain_text', text: title, emoji: true },
     },
     { type: 'divider' },
     {
@@ -180,12 +247,13 @@ function isFarmerPhoneChangeRequest(report: Record<string, any>): { matched: boo
   return { matched, keywordsHit };
 }
 
-function buildAdminRequestBlocks(session: BotSession, reportNumber?: string): any[] {
+function buildAdminRequestBlocks(session: BotSession, reportNumber?: string, priority?: 'P0' | null): any[] {
   const report = session.parsedReport || {};
   const profile = session.profile;
   const timestamp = getWIBTimestamp();
 
-  const title = report.title || '[Admin Request] Request';
+  const baseTitle = report.title || '[Admin Request] Request';
+  const title = priority === 'P0' ? `🔴 P0 — ${baseTitle}` : baseTitle;
 
   const { matched: mentionMeisisko, keywordsHit } = isFarmerPhoneChangeRequest(report);
   console.log('[MEISISKO_MENTION] category:', report.category || '—', '| matched:', mentionMeisisko, '| keywords_hit:', keywordsHit);
@@ -202,7 +270,7 @@ function buildAdminRequestBlocks(session: BotSession, reportNumber?: string): an
   blocks.push(
     {
       type: 'header',
-      text: { type: 'plain_text', text: title, emoji: false },
+      text: { type: 'plain_text', text: title, emoji: true },
     },
     { type: 'divider' },
     {
@@ -655,20 +723,36 @@ export async function postToSlack(
   onSlackTs?: (ts: string, channel: string) => void,
   reportNumber?: string
 ): Promise<any> {
+  const report = session.parsedReport || {};
+
+  const { priority, reason } = detectPriority(report);
+  const reportTimestamp = new Date().toISOString();
+  console.log(
+    '[PRIORITY_TAG] category:', report.category || '—',
+    '| priority:', priority || 'none',
+    '| reason:', reason || '—',
+    '| timestamp:', reportTimestamp
+  );
+
   const blocks =
     session.reportType === 'bug'
-      ? buildBugReportBlocks(session, reportNumber)
-      : buildAdminRequestBlocks(session, reportNumber);
+      ? buildBugReportBlocks(session, reportNumber, priority)
+      : buildAdminRequestBlocks(session, reportNumber, priority);
 
-  const report = session.parsedReport || {};
-  const fallbackText = `${report.title || 'Report'} — ${session.profile?.name || session.senderName}`;
+  const fallbackText = priority === 'P0'
+    ? `🔴 P0 — ${report.title || 'Report'} — ${session.profile?.name || session.senderName}`
+    : `${report.title || 'Report'} — ${session.profile?.name || session.senderName}`;
 
   console.log("MEDIA URLS IN SESSION:", session.mediaUrls);
 
   const botToken = process.env.SLACK_BOT_TOKEN;
-  const channelId = session.reportType === 'bug'
+
+  const testChannel = process.env.SLACK_CHANNEL_PRIORITY_TEST;
+  const normalChannelId = session.reportType === 'bug'
     ? process.env.SLACK_CHANNEL_BUG
     : process.env.SLACK_CHANNEL_ADMIN;
+
+  const channelId = (priority === 'P0' && testChannel) ? testChannel : normalChannelId;
 
   if (botToken && channelId) {
     try {
