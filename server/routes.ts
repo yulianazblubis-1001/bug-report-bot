@@ -3,7 +3,7 @@ import { type Server } from "http";
 import crypto from "crypto";
 import { handleMessage } from "./bot/router";
 import { sessionStore } from "./bot/session";
-import { sendMessage } from "./bot/services/wati";
+import { sendMessage, sendTemplateMessage } from "./bot/services/wati";
 import { getReportLogs, getStats } from "./bot/activityLog";
 import { isWhitelisted, getWhitelistCount, getAllAgronomists, lookupProfile } from "./bot/whitelist";
 import * as googleSheets from "./bot/services/google-sheets";
@@ -233,9 +233,26 @@ export async function registerRoutes(
             await reportRegistry.markResolved(itemTs);
             console.log(`[EMOJI_REPLY] reportNumber: ${reportNumber} emoji: ${reaction} reportType: ${mapping.reportType} replySent: resolved`);
           } catch (watiErr: any) {
-            const reason = watiErr.watiData?.message || watiErr.message || 'unknown';
-            console.error(`[EMOJI_REPLY] WA send failed for ${mapping.phoneNumber}: ${reason}`);
-            await postSlackThreadReply(channelId, itemTs, `⚠️ WhatsApp notification to ${mapping.senderName} failed (${reason}). Please notify them manually.`);
+            const watiMsg = watiErr.watiData?.message || watiErr.message || '';
+            const isExpired = watiMsg.toLowerCase().includes('expired') || watiMsg.toLowerCase().includes('closed');
+            if (isExpired) {
+              console.log(`[EMOJI_REPLY] Ticket expired for ${mapping.phoneNumber} — falling back to template message`);
+              try {
+                await sendTemplateMessage(mapping.phoneNumber, 'resolved_bug_admreq_after_one_day', [
+                  { name: 'ja_name', value: mapping.senderName },
+                  { name: 'report_number', value: reportNumber || '—' },
+                ]);
+                await reportRegistry.markResolved(itemTs);
+                console.log(`[EMOJI_REPLY] reportNumber: ${reportNumber} emoji: ${reaction} reportType: ${mapping.reportType} replySent: resolved_via_template`);
+              } catch (tmplErr: any) {
+                const tmplReason = (tmplErr as any).watiData?.message || (tmplErr as Error).message || 'unknown';
+                console.error(`[EMOJI_REPLY] Template also failed for ${mapping.phoneNumber}: ${tmplReason}`);
+                await postSlackThreadReply(channelId, itemTs, `⚠️ WhatsApp notification to ${mapping.senderName} failed — session expired and template also failed (${tmplReason}). Please notify them manually.`);
+              }
+            } else {
+              console.error(`[EMOJI_REPLY] WA send failed for ${mapping.phoneNumber}: ${watiMsg}`);
+              await postSlackThreadReply(channelId, itemTs, `⚠️ WhatsApp notification to ${mapping.senderName} failed (${watiMsg}). Please notify them manually.`);
+            }
           }
           return;
         }
