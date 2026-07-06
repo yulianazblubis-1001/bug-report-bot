@@ -35,12 +35,14 @@ export async function sendMessage(phoneNumber: string, text: string): Promise<an
       }
     );
     if (res.data?.result === false) {
+      const msg = res.data?.message || 'unknown reason';
       console.error(`[WATI] API rejected send to ${phoneNumber}:`, JSON.stringify(res.data));
-    } else {
-      console.log(`[WATI] Sent to ${phoneNumber} (ok): ${text.substring(0, 60)}...`);
+      throw Object.assign(new Error(`WATI rejected: ${msg}`), { watiRejected: true, watiData: res.data });
     }
+    console.log(`[WATI] Sent to ${phoneNumber} (ok): ${text.substring(0, 60)}...`);
     return res.data;
   } catch (err: any) {
+    if (err.watiRejected) throw err;
     const status = err.response?.status;
     const errData = err.response?.data;
     console.error(`[WATI] Error sending to ${phoneNumber} (HTTP ${status}):`, JSON.stringify(errData) || err.message);

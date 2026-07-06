@@ -193,13 +193,19 @@ export async function registerRoutes(
               if (mapping.requestId) {
                 await googleSheets.updateStatus(mapping.requestId, 'RESOLVED', 'Engineer', '');
               }
-              await sendMessage(
-                mapping.phoneNumber,
-                `✅ Halo ${mapping.senderName}! Credit Limit Top Up${rnTextID} sudah diproses oleh tim.\n\nHi ${mapping.senderName}! ${rnSubjectEN} has been processed by the team.`
-              );
-              await postSlackThreadReply(channelId, itemTs, `✅ Credit limit top-up has been processed. WhatsApp notification sent to ${mapping.senderName}.`);
-              await reportRegistry.markResolved(itemTs);
-              console.log(`[EMOJI_REPLY] reportNumber: ${reportNumber} emoji: ${reaction} reportType: creditTopUp replySent: resolved`);
+              try {
+                await sendMessage(
+                  mapping.phoneNumber,
+                  `✅ Halo ${mapping.senderName}! Credit Limit Top Up${rnTextID} sudah diproses oleh tim.\n\nHi ${mapping.senderName}! ${rnSubjectEN} has been processed by the team.`
+                );
+                await postSlackThreadReply(channelId, itemTs, `✅ Credit limit top-up has been processed. WhatsApp notification sent to ${mapping.senderName}.`);
+                await reportRegistry.markResolved(itemTs);
+                console.log(`[EMOJI_REPLY] reportNumber: ${reportNumber} emoji: ${reaction} reportType: creditTopUp replySent: resolved`);
+              } catch (watiErr: any) {
+                const reason = watiErr.watiData?.message || watiErr.message || 'unknown';
+                console.error(`[EMOJI_REPLY] WA send failed for ${mapping.phoneNumber}: ${reason}`);
+                await postSlackThreadReply(channelId, itemTs, `⚠️ WhatsApp notification to ${mapping.senderName} failed (${reason}). Please notify them manually.`);
+              }
             } catch (err: any) {
               console.error('[Slack Events] Error handling credit limit resolution:', err.message);
             }
@@ -222,9 +228,15 @@ export async function registerRoutes(
               `Halo ${mapping.senderName}! Laporan kamu${rnTextID} sudah ditandai DONE oleh tim. Masalahnya sudah diperbaiki, silakan coba lagi.\n\n` +
               `Hi ${mapping.senderName}! ${rnSubjectEN} has been marked DONE by the team. The issue has been fixed, please try again.`;
           }
-          await sendMessage(mapping.phoneNumber, waMsg);
-          await reportRegistry.markResolved(itemTs);
-          console.log(`[EMOJI_REPLY] reportNumber: ${reportNumber} emoji: ${reaction} reportType: ${mapping.reportType} replySent: resolved`);
+          try {
+            await sendMessage(mapping.phoneNumber, waMsg);
+            await reportRegistry.markResolved(itemTs);
+            console.log(`[EMOJI_REPLY] reportNumber: ${reportNumber} emoji: ${reaction} reportType: ${mapping.reportType} replySent: resolved`);
+          } catch (watiErr: any) {
+            const reason = watiErr.watiData?.message || watiErr.message || 'unknown';
+            console.error(`[EMOJI_REPLY] WA send failed for ${mapping.phoneNumber}: ${reason}`);
+            await postSlackThreadReply(channelId, itemTs, `⚠️ WhatsApp notification to ${mapping.senderName} failed (${reason}). Please notify them manually.`);
+          }
           return;
         }
 
@@ -241,8 +253,14 @@ export async function registerRoutes(
               `Hi ${mapping.senderName}! ${rnSubjectEN} has been marked as NOT A BUG by the team. ` +
               `Please retry, make sure all mandatory fields are filled, or contact the product team via the WhatsApp support channel.`;
           }
-          await sendMessage(mapping.phoneNumber, waMsg);
-          console.log(`[EMOJI_REPLY] reportNumber: ${reportNumber} emoji: ${reaction} reportType: ${mapping.reportType} replySent: rejected`);
+          try {
+            await sendMessage(mapping.phoneNumber, waMsg);
+            console.log(`[EMOJI_REPLY] reportNumber: ${reportNumber} emoji: ${reaction} reportType: ${mapping.reportType} replySent: rejected`);
+          } catch (watiErr: any) {
+            const reason = watiErr.watiData?.message || watiErr.message || 'unknown';
+            console.error(`[EMOJI_REPLY] WA send failed for ${mapping.phoneNumber}: ${reason}`);
+            await postSlackThreadReply(channelId, itemTs, `⚠️ WhatsApp notification to ${mapping.senderName} failed (${reason}). Please notify them manually.`);
+          }
           return;
         }
       }
