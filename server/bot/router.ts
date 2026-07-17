@@ -155,6 +155,13 @@ export async function handleMessage(
   }
 
   if (!currentSession) {
+    const looksLikeMenuReply = ['1', '2', '3'].includes(cleanText);
+    if (looksLikeMenuReply) {
+      console.log(`[Router] No session for ${phoneNumber} but got menu reply "${cleanText}" — re-showing menu`);
+      currentSession = sessionStore.create(phoneNumber, senderName, profile);
+      await wati.sendMessage(phoneNumber, getWelcomeMsg(displayName));
+      return;
+    }
     console.log(`[Router] Ignoring message from whitelisted ${phoneNumber} (no active session): "${cleanText.substring(0, 50)}"`);
     return;
   }

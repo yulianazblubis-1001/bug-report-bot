@@ -65,8 +65,13 @@ class SessionStore {
 
   get(phoneNumber: string): BotSession | null {
     const session = this.sessions.get(phoneNumber);
-    if (!session) return null;
-    if (Date.now() - session.lastActivity > SESSION_TTL_MS) {
+    if (!session) {
+      console.log(`[Session] get(${phoneNumber}) → null (not in store; store size=${this.sessions.size})`);
+      return null;
+    }
+    const age = Date.now() - session.lastActivity;
+    if (age > SESSION_TTL_MS) {
+      console.log(`[Session] get(${phoneNumber}) → null (TTL expired; age=${Math.round(age/1000)}s, step=${session.step})`);
       this.sessions.delete(phoneNumber);
       return null;
     }
@@ -77,6 +82,7 @@ class SessionStore {
   }
 
   create(phoneNumber: string, senderName?: string, profile?: AgronomistProfile | null): BotSession {
+    const hadExisting = this.sessions.has(phoneNumber);
     const session: BotSession = {
       phoneNumber,
       senderName: profile?.name || senderName || phoneNumber,
@@ -95,11 +101,16 @@ class SessionStore {
       createdAt: Date.now(),
     };
     this.sessions.set(phoneNumber, session);
+    console.log(`[Session] Created for ${phoneNumber} (replaced=${hadExisting}; store size=${this.sessions.size})`);
     return session;
   }
 
   reset(phoneNumber: string): void {
+    const had = this.sessions.has(phoneNumber);
     this.sessions.delete(phoneNumber);
+    if (had) {
+      console.log(`[Session] Reset(deleted) for ${phoneNumber} (store size=${this.sessions.size})`);
+    }
   }
 
   async storeSlackMapping(slackTs: string, channelId: string, data: SlackMapping): Promise<void> {
