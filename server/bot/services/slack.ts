@@ -356,6 +356,93 @@ function buildAdminRequestBlocks(session: BotSession, reportNumber?: string, pri
   return blocks;
 }
 
+function buildChangePhoneBlocks(session: BotSession, reportNumber?: string): any[] {
+  const report = session.parsedReport || {};
+  const profile = session.profile;
+  const timestamp = getWIBTimestamp();
+
+  const requestDate = new Date().toLocaleDateString('id-ID', {
+    day: '2-digit', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta'
+  });
+
+  const blocks: any[] = [];
+
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: `<@U0AAVDJHD62> — farmer phone number change request` },
+  });
+
+  blocks.push(
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: '🔄 CHANGE FARMER PHONE NUMBER', emoji: true },
+    },
+    { type: 'divider' },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Report Number:* ${reportNumber || '—'}` },
+        { type: 'mrkdwn', text: `*Request Type:* Change Phone Number` },
+      ],
+    },
+    {
+      type: 'section',
+      fields: [
+        {
+          type: 'mrkdwn',
+          text: `*Requester:* ${profile?.name || session.senderName}`,
+        },
+        {
+          type: 'mrkdwn',
+          text: `*Area:* ${profile?.area || '—'}`,
+        },
+      ],
+    },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Request Date:* ${requestDate}` },
+        { type: 'mrkdwn', text: `*Reporter Email:* ${profile?.zohoEmail || session.phoneNumber}` },
+      ],
+    },
+    { type: 'divider' },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Farmer Name:* ${report.farmerName || '—'}` },
+        { type: 'mrkdwn', text: `*FG Name:* ${report.fgName || '—'}` },
+      ],
+    },
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Reason To Change:* ${report.reasonToChange || '—'}` },
+    },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Old Phone Number:* ${report.oldPhoneNumber || '—'}` },
+        { type: 'mrkdwn', text: `*New Phone Number:* ${report.newPhoneNumber || '—'}` },
+      ],
+    },
+  );
+
+  if (report.originalText) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `_Original: ${report.originalText}_` }],
+    });
+  }
+
+  blocks.push({ type: 'divider' });
+
+  blocks.push({
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: `${timestamp} | +${session.phoneNumber} | ${profile?.area || '—'}` }],
+  });
+
+  return blocks;
+}
+
 function getFileExtension(url: string): string {
   const cleanUrl = url.split('?')[0];
   const ext = cleanUrl.split('.').pop()?.toLowerCase() || '';
@@ -737,11 +824,15 @@ export async function postToSlack(
   const blocks =
     session.reportType === 'bug'
       ? buildBugReportBlocks(session, reportNumber, priority)
-      : buildAdminRequestBlocks(session, reportNumber, priority);
+      : session.reportType === 'changePhone'
+        ? buildChangePhoneBlocks(session, reportNumber)
+        : buildAdminRequestBlocks(session, reportNumber, priority);
 
-  const fallbackText = priority === 'P0'
-    ? `🔴 P0 — ${report.title || 'Report'} — ${session.profile?.name || session.senderName}`
-    : `${report.title || 'Report'} — ${session.profile?.name || session.senderName}`;
+  const fallbackText = session.reportType === 'changePhone'
+    ? `🔄 Change Phone Number — ${report.farmerName || 'Farmer'} — ${session.profile?.name || session.senderName}`
+    : priority === 'P0'
+      ? `🔴 P0 — ${report.title || 'Report'} — ${session.profile?.name || session.senderName}`
+      : `${report.title || 'Report'} — ${session.profile?.name || session.senderName}`;
 
   console.log("MEDIA URLS IN SESSION:", session.mediaUrls);
 

@@ -37,10 +37,11 @@ Pilih jenis permintaan:
 
 1️⃣ General Request (reset password, dll)
 2️⃣ Credit Limit Top Up
+3️⃣ Ganti Nomor HP Petani
 
-Balas 1 atau 2.
+Balas 1, 2, atau 3.
 
-_(Choose request type: 1 for General, 2 for Credit Limit Top Up)_`;
+_(Choose request type: 1 for General, 2 for Credit Limit Top Up, 3 for Change Farmer Phone Number)_`;
 
 const BUG_START_MSG = `Jelaskan masalahnya. Tulis dengan bahasa kamu sendiri.
 
@@ -56,6 +57,18 @@ _(Describe the issue. Required: PG name, steps to reproduce, app version, platfo
 const ADMIN_START_MSG = `Jelaskan apa yang kamu butuhkan. Tulis dengan bahasa kamu sendiri.
 
 _(Describe what you need in your own words.)_`;
+
+const CHANGE_PHONE_START_MSG = `🔄 *Ganti Nomor HP Petani*
+
+Ceritakan detailnya. Saya butuh info berikut:
+
+• Nama Petani
+• Nama FG
+• Alasan ganti nomor HP
+• Nomor HP lama
+• Nomor HP baru
+
+_(Please provide: farmer name, FG name, reason for change, old phone number, new phone number.)_`;
 
 const CREDIT_TYPE_SUBMENU_MSG = `🏦 *Credit Limit Top Up*
 
@@ -206,7 +219,17 @@ export async function handleMessage(
       await wati.sendMessage(phoneNumber, CREDIT_TYPE_SUBMENU_MSG);
       return;
     }
-    await wati.sendMessage(phoneNumber, `Balas *1* untuk General Request atau *2* untuk Credit Limit Top Up.\n\n_(Reply 1 or 2.)_`);
+    if (cleanText === '3') {
+      currentSession.reportType = 'changePhone';
+      currentSession.step = 'COLLECTING';
+      currentSession.conversation = [];
+      currentSession.mediaUrls = [];
+      currentSession.followUpCount = 0;
+      currentSession.parsedReport = null;
+      await wati.sendMessage(phoneNumber, CHANGE_PHONE_START_MSG);
+      return;
+    }
+    await wati.sendMessage(phoneNumber, `Balas *1* untuk General Request, *2* untuk Credit Limit Top Up, atau *3* untuk Ganti Nomor HP Petani.\n\n_(Reply 1, 2, or 3.)_`);
     return;
   }
 
@@ -282,7 +305,9 @@ export async function handleMessage(
 
       const hasScreenshot = currentSession.mediaUrls.length > 0;
       const isLargeFarmer = currentSession.creditLimitType === 'largeFarmer';
-      const maxFollowUps = currentSession.reportType === 'creditTopUp' ? (isLargeFarmer ? 12 : 8) : 5;
+      const maxFollowUps = currentSession.reportType === 'creditTopUp'
+        ? (isLargeFarmer ? 12 : 8)
+        : currentSession.reportType === 'changePhone' ? 3 : 5;
 
       const result = await evaluateReport(
         currentSession.conversation,
@@ -415,6 +440,8 @@ export async function handleMessage(
       let startMsg = BUG_START_MSG;
       if (currentSession.reportType === 'creditTopUp') {
         startMsg = currentSession.creditLimitType === 'largeFarmer' ? CREDIT_LIMIT_LARGE_START_MSG : CREDIT_LIMIT_START_MSG;
+      } else if (currentSession.reportType === 'changePhone') {
+        startMsg = CHANGE_PHONE_START_MSG;
       } else if (currentSession.reportType === 'admin') startMsg = ADMIN_START_MSG;
       await wati.sendMessage(phoneNumber, 'Mulai ulang.\n\n' + startMsg);
       return;
@@ -459,6 +486,12 @@ function buildSummary(session: BotSession): string {
     if (report.stepsToReproduce) {
       summary += `\nSteps: ${report.stepsToReproduce}`;
     }
+  } else if (session.reportType === 'changePhone') {
+    if (report.farmerName) summary += `\nFarmer: ${report.farmerName}`;
+    if (report.fgName) summary += `\nFG: ${report.fgName}`;
+    if (report.oldPhoneNumber) summary += `\nOld Phone: ${report.oldPhoneNumber}`;
+    if (report.newPhoneNumber) summary += `\nNew Phone: ${report.newPhoneNumber}`;
+    if (report.reasonToChange) summary += `\nReason: ${report.reasonToChange}`;
   } else {
     if (report.accountAffected) {
       summary += `\nAccount: ${report.accountAffected}`;
@@ -513,7 +546,7 @@ async function submitReport(session: BotSession): Promise<void> {
       });
     }
 
-    const typeLabel = session.reportType === 'bug' ? 'Bug Report' : 'Admin Request';
+    const typeLabel = session.reportType === 'bug' ? 'Bug Report' : session.reportType === 'changePhone' ? 'Change Phone Number Request' : 'Admin Request';
     const report = session.parsedReport || {};
 
     addReportLog({

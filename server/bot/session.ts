@@ -20,7 +20,7 @@ export interface BotSession {
   senderName: string;
   profile: AgronomistProfile | null;
   step: 'SELECT_TYPE' | 'SELECT_ADMIN_TYPE' | 'SELECT_CREDIT_TYPE' | 'COLLECTING' | 'CONFIRMING';
-  reportType: 'bug' | 'admin' | 'creditTopUp' | null;
+  reportType: 'bug' | 'admin' | 'changePhone' | 'creditTopUp' | null;
   creditLimitType: 'standard' | 'largeFarmer' | null;
   conversation: ConversationMessage[];
   mediaUrls: string[];

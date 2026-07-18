@@ -10,7 +10,7 @@ function getClient(): Anthropic | null {
   return client;
 }
 
-function buildSystemPrompt(reportType: 'bug' | 'admin' | 'creditTopUp', hasScreenshot: boolean, creditLimitType?: 'standard' | 'largeFarmer' | null): string {
+function buildSystemPrompt(reportType: 'bug' | 'admin' | 'changePhone' | 'creditTopUp', hasScreenshot: boolean, creditLimitType?: 'standard' | 'largeFarmer' | null): string {
   if (reportType === 'bug') {
     return `You are a QA assistant for Rize.farm, an agri-fintech app used by agronomists in Indonesia and Vietnam.
 
@@ -244,6 +244,43 @@ Return ONLY valid JSON (no markdown, no backticks):
 ALWAYS include parsedReport even if status is need_more_info (use what you have so far).`;
   }
 
+  if (reportType === 'changePhone') {
+    return `You are an admin assistant for Rize.farm, an agri-fintech app used by agronomists in Indonesia and Vietnam.
+
+The user wants to request a farmer phone number change. Your job is to collect all required fields.
+
+REQUIRED FIELDS (all mandatory — do not mark ready until ALL are present):
+1. farmerName — the farmer's full name
+2. fgName — the Farmer Group (FG / Kelompok Tani) name
+3. reasonToChange — why the phone number is being changed
+4. oldPhoneNumber — the current/old phone number
+5. newPhoneNumber — the replacement phone number
+
+RULES:
+- Ask in casual, friendly Indonesian (like chatting with a coworker)
+- Ask only ONE missing field at a time
+- Do NOT ask more than 3 follow-up questions total
+- If after 3 follow-ups some fields are still missing, mark as ready with whatever you have and use "—" for missing fields
+- Never ask for info already provided
+
+Return ONLY valid JSON (no markdown, no backticks):
+{
+  "status": "need_more_info" or "ready",
+  "followUpQuestion": "question in Indonesian (only if need_more_info)",
+  "parsedReport": {
+    "title": "[Change Phone Number] <farmer name> — <fg name>",
+    "farmerName": "farmer full name or null",
+    "fgName": "farmer group name or null",
+    "reasonToChange": "reason for change in English or null",
+    "oldPhoneNumber": "old phone number or null",
+    "newPhoneNumber": "new phone number or null",
+    "originalText": "exact original text as user typed it, concatenated"
+  }
+}
+
+ALWAYS include parsedReport even if status is need_more_info (use what you have so far).`;
+  }
+
   return `You are an admin assistant for Rize.farm, an agri-fintech app used by agronomists in Indonesia and Vietnam.
 
 The user submitted an admin request via WhatsApp. Your job is to collect enough information to action the request.
@@ -324,7 +361,7 @@ export interface AgentResponse {
 
 export async function evaluateReport(
   conversation: ConversationMessage[],
-  reportType: 'bug' | 'admin' | 'creditTopUp',
+  reportType: 'bug' | 'admin' | 'changePhone' | 'creditTopUp',
   followUpCount: number,
   hasScreenshot: boolean,
   creditLimitType?: 'standard' | 'largeFarmer' | null
@@ -346,7 +383,9 @@ export async function evaluateReport(
   try {
     const systemPrompt = buildSystemPrompt(reportType, hasScreenshot, creditLimitType);
     const isLargeFarmer = creditLimitType === 'largeFarmer';
-    const maxFollowUps = reportType === 'creditTopUp' ? (isLargeFarmer ? 12 : 8) : 5;
+    const maxFollowUps = reportType === 'creditTopUp'
+      ? (isLargeFarmer ? 12 : 8)
+      : reportType === 'changePhone' ? 3 : 5;
     const contextNote = followUpCount >= maxFollowUps
       ? '\n\nIMPORTANT: You have already asked multiple follow-up questions. Mark this as "ready" now with whatever information you have. Do not ask more questions.'
       : '';
