@@ -161,6 +161,28 @@ function buildBugReportBlocks(session: BotSession, reportNumber?: string, priori
     },
   });
 
+  // Invoice / Quotation details block
+  const hasInvoiceDetails = report.invoiceNumber || report.invoiceType || report.invoiceCurrentNumber || report.invoiceNewNumber;
+  if (hasInvoiceDetails) {
+    const invoiceFields: string[] = [];
+    if (report.invoiceNumber) invoiceFields.push(`*Invoice/Quotation No:* ${report.invoiceNumber}`);
+    if (report.invoiceType) invoiceFields.push(`*Type:* ${report.invoiceType}`);
+    if (report.invoiceCurrentNumber) invoiceFields.push(`*Current No:* ${report.invoiceCurrentNumber}`);
+    if (report.invoiceNewNumber) invoiceFields.push(`*New No:* ${report.invoiceNewNumber}`);
+
+    if (invoiceFields.length <= 2) {
+      blocks.push({
+        type: 'section',
+        fields: invoiceFields.map(f => ({ type: 'mrkdwn', text: f })),
+      });
+    } else {
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: invoiceFields.join('  |  ') },
+      });
+    }
+  }
+
   blocks.push({ type: 'divider' });
 
   blocks.push({
