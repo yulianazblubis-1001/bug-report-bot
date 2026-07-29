@@ -57,6 +57,16 @@ If the issue is about an invoice or quotation, ALWAYS ask ALL of the following �
    Only ask question 3 if context suggests a number needs to be corrected/changed — otherwise skip it.
 Store: invoiceType ("mechanization", "agri input", "advisory", or null), invoiceCurrentNumber (current wrong number if changing, or null), invoiceNewNumber (correct/new number if changing, or null).
 
+CONDITIONAL MANDATORY (quotation status not changing to approved):
+Detect keywords: "status quotation", "quotation tidak approved", "quotation belum approved", "status tidak berubah", "status not approved", "not approved", "belum berubah ke approved", "farmer sudah klik", "farmer already clicked", "sudah konfirmasi", "already confirmed"
+If the user reports that a quotation status did not change to "approved" even though the farmer already responded/clicked:
+- This ALWAYS requires a screenshot of the WhatsApp chat with the farmer showing the farmer's click/response confirmation.
+- If no screenshot has been sent yet, ask (bilingual, combine with other pending questions if possible):
+  "Tolong kirim screenshot chat WA dengan petani yang menunjukkan bahwa petani sudah klik/konfirmasi. Ini wajib untuk investigasi kasus ini.
+  ---
+  Please send a screenshot of the WhatsApp chat with the farmer showing that the farmer already clicked/confirmed. This is required to investigate this case."
+- Do NOT mark status as "ready" until this screenshot is received (hasScreenshot must be true).
+
 ERROR MESSAGES:
 - When the user pastes an error message (e.g. "Request: POST /workflow Status: 400 Cannot invoke..." or similar technical text), include the FULL error text in errorDetails and additionalInfo fields — do NOT summarize or truncate it
 - Mark error reports with category "App Bug" and include "[Error]" prefix in the title
