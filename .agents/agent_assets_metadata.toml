@@ -18,3 +18,10 @@ id = "yrejgkRBTEGTkpBaPp0ZI"
 uri = "file://credit-limit-feature-reference.md"
 type = "text"
 title = "Credit Limit Top-Up — Feature Reference"
+
+[[outputs]]
+id = "x8gP_zVnNViHs3ZhyNMRI"
+uri = "file://bug-report-bot-code.zip"
+type = "unspecified"
+title = "Bug Report Bot — Full Source Code"
+description = "All bot source files (server/bot/, server/routes.ts) + technical requirements doc. Ready to migrate to Claude Code."
