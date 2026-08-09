@@ -1,53 +1,10 @@
-import { google } from 'googleapis';
 import axios from 'axios';
 import { Readable } from 'stream';
-
-let connectionSettings: any = null;
-
-async function getAccessToken(): Promise<string> {
-  if (connectionSettings && connectionSettings.settings?.expires_at && new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
-    return connectionSettings.settings.access_token;
-  }
-
-  connectionSettings = null;
-
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY
-    ? 'repl ' + process.env.REPL_IDENTITY
-    : process.env.WEB_REPL_RENEWAL
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL
-    : null;
-
-  if (!xReplitToken) {
-    throw new Error('X-Replit-Token not found for repl/depl');
-  }
-
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=google-drive',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X-Replit-Token': xReplitToken,
-      },
-    }
-  ).then(res => res.json()).then(data => data.items?.[0]);
-
-  const accessToken = connectionSettings?.settings?.access_token || connectionSettings?.settings?.oauth?.credentials?.access_token;
-
-  if (!connectionSettings || !accessToken) {
-    console.error('[Google Drive] Connection failed. Has settings:', !!connectionSettings?.settings);
-    throw new Error('Google Drive not connected');
-  }
-
-  console.log('[Google Drive] Access token obtained');
-  return accessToken;
-}
+import { getDriveClient } from './google-auth';
 
 async function getUncachableDriveClient() {
-  const accessToken = await getAccessToken();
-  const oauth2Client = new google.auth.OAuth2();
-  oauth2Client.setCredentials({ access_token: accessToken });
-  return google.drive({ version: 'v3', auth: oauth2Client });
+  // Auth is handled by the shared service-account helper (see google-auth.ts).
+  return getDriveClient();
 }
 
 // Create or reuse a subfolder inside the parent folder

@@ -82,8 +82,8 @@ Balas 1 atau 2.
 _(Choose type: 1 for Standard, 2 for Large Farmer)_`;
 
 function getCreditLimitFormMsg(phoneNumber: string, creditType: string): string {
-  // APP_URL takes priority — set this to your production URL in Replit Secrets
-  const baseUrl = process.env.APP_URL || 'https://bug-report-bot.replit.app';
+  // APP_URL must point to this app's public URL (set it in your host's env vars).
+  const baseUrl = process.env.APP_URL || 'http://localhost:5000';
   const formUrl = `${baseUrl}/credit-limit?phone=${phoneNumber}&type=${creditType}`;
 
   return `🏦 *Credit Limit Top Up*
