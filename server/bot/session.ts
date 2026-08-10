@@ -53,14 +53,32 @@ class SessionStore {
   }
 
   private async init(): Promise<void> {
-    try {
-      await ensureTable();
-      await pruneOldMappings(30);
-      this.initialized = true;
-      console.log('[SessionStore] DB-backed Slack mappings ready');
-    } catch (err: any) {
-      console.error('[SessionStore] Failed to initialize DB:', err.message);
+    // Retry with backoff: on hosts like Railway, the private network to the
+    // database can take a few seconds to come up after the container starts,
+    // so the first connection attempt often fails with an (empty-message)
+    // AggregateError. Retrying a handful of times lets it self-heal.
+    const maxAttempts = 8;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await ensureTable();
+        await pruneOldMappings(30);
+        this.initialized = true;
+        console.log('[SessionStore] DB-backed Slack mappings ready');
+        return;
+      } catch (err: any) {
+        const detail = err?.message || err?.errors?.[0]?.message || String(err);
+        console.error(
+          `[SessionStore] DB init attempt ${attempt}/${maxAttempts} failed: ${detail}`,
+        );
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+        }
+      }
     }
+    console.error(
+      '[SessionStore] Could not initialize DB after retries. Slack reaction ↔ reporter ' +
+        'mapping will be unavailable until the next successful DB call.',
+    );
   }
 
   get(phoneNumber: string): BotSession | null {
