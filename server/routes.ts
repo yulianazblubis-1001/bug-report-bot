@@ -14,11 +14,15 @@ import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import * as reportRegistry from './bot/services/reportRegistry';
 import { getNextReportNumber } from './bot/services/reportCounter';
+import { startReminderSweep } from './bot/services/reminderSweep';
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // Background sweep: nudge on reports left with no ✅/❌ reaction for ~23h25m.
+  startReminderSweep();
 
   app.get("/api/bot/status", (_req, res) => {
     const configStatus = {
@@ -161,14 +165,11 @@ export async function registerRoutes(
           console.log(`[Slack Events] Primary lookup miss for ${channelId}:${itemTs} — trying ts-only fallback`);
           mapping = await sessionStore.findSlackMappingByTs(itemTs);
         }
-        if (!mapping) {
-          console.log(`[Slack Events] No mapping found for ts=${itemTs} in any channel — ignoring`);
-          return;
-        }
 
-        console.log(`[Slack Events] Found mapping for ${mapping.senderName} (${mapping.phoneNumber}) type=${mapping.reportType}`);
-
-        // Look up report number from durable registry first, fall back to DB mapping
+        // Look up the durable Google Sheets registry too. This is independent of
+        // the Postgres slack_mappings table, so it survives Postgres outages —
+        // when the Postgres write/read fails, this is our fallback source of the
+        // reporter's phone/name/type so reactions still reach the reporter.
         let registryRecord: Awaited<ReturnType<typeof reportRegistry.get>> = null;
         try {
           registryRecord = await reportRegistry.get(itemTs);
@@ -176,19 +177,48 @@ export async function registerRoutes(
           console.warn(`[Slack Events] Registry lookup failed: ${regErr.message}`);
         }
 
+        // If the Postgres mapping is missing (e.g. the write failed at submit
+        // time or Postgres is unreachable), synthesize one from the registry.
+        if (!mapping && registryRecord && registryRecord.phone) {
+          const registryType =
+            registryRecord.type === 'credit' ? 'creditTopUp' : registryRecord.type;
+          mapping = {
+            phoneNumber: registryRecord.phone,
+            senderName: registryRecord.name,
+            reportType: registryType,
+            reportNumber: registryRecord.reportNumber,
+          };
+          console.log(`[Slack Events] Postgres mapping missing — recovered from registry for ${mapping.senderName} (${mapping.phoneNumber}) type=${mapping.reportType}`);
+        }
+
+        if (!mapping) {
+          console.log(`[Slack Events] No mapping found for ts=${itemTs} in Postgres or registry — ignoring`);
+          return;
+        }
+
+        console.log(`[Slack Events] Found mapping for ${mapping.senderName} (${mapping.phoneNumber}) type=${mapping.reportType}`);
+
         const reportNumber = registryRecord?.reportNumber || mapping.reportNumber || '';
         const rnTextID = reportNumber ? ` dengan Report Number ${reportNumber}` : '';
         const rnSubjectEN = reportNumber ? `Your Report Number ${reportNumber}` : 'Your report';
 
-        // Duplicate-resolution guard — skip if already marked DONE in registry
-        if (registryRecord?.status === 'DONE') {
-          console.log(`[Slack Events] Already DONE in registry for ts=${itemTs} — skipping WA notification`);
+        // Duplicate-resolution guard — skip if the report is already closed
+        // (resolved or rejected) so a second reaction doesn't re-notify the JA.
+        const closedStatus = (registryRecord?.status || '').toUpperCase();
+        if (closedStatus === 'DONE' || closedStatus === 'REJECTED') {
+          console.log(`[Slack Events] Already ${closedStatus} in registry for ts=${itemTs} — skipping WA notification`);
           return;
         }
 
+        // Reaction → outcome mapping:
+        //   ✅ / :done: / :solved:  → approved / solved / fixed
+        //   ❌ / :no_bug:           → rejected / not a bug
+        const RESOLVED_EMOJIS = ['done', 'white_check_mark', 'solve', 'solved'];
+        const REJECTED_EMOJIS = ['x', 'no_bug', 'notabug-1'];
+
         // ── Credit Limit Top Up ──────────────────────────────────────────────────
         if (mapping.reportType === 'creditTopUp') {
-          if (reaction === "done" || reaction === "white_check_mark") {
+          if (RESOLVED_EMOJIS.includes(reaction)) {
             try {
               if (mapping.requestId) {
                 await googleSheets.updateStatus(mapping.requestId, 'RESOLVED', 'Engineer', '');
@@ -214,9 +244,6 @@ export async function registerRoutes(
         }
 
         // ── Bug Report & Admin Request ───────────────────────────────────────────
-        const RESOLVED_EMOJIS = ['done', 'white_check_mark', 'solve', 'solved'];
-        const REJECTED_EMOJIS = ['x', 'notabug-1'];
-
         if (RESOLVED_EMOJIS.includes(reaction)) {
           let waMsg: string;
           if (mapping.reportType === 'admin') {
@@ -272,6 +299,7 @@ export async function registerRoutes(
           }
           try {
             await sendMessage(mapping.phoneNumber, waMsg);
+            await reportRegistry.markRejected(itemTs);
             console.log(`[EMOJI_REPLY] reportNumber: ${reportNumber} emoji: ${reaction} reportType: ${mapping.reportType} replySent: rejected`);
           } catch (watiErr: any) {
             const reason = watiErr.watiData?.message || watiErr.message || 'unknown';
@@ -315,6 +343,16 @@ export async function registerRoutes(
       }
 
       res.status(200).json({ status: "received" });
+
+      // Any Ops decision here (approve/reject/resolve) is a response, so suppress
+      // the ~23h "no response yet" reminder sweep for this report. Using the
+      // reminded stamp (not status) avoids disturbing the RESOLVED dup-guard below.
+      if (slackTs) {
+        const up = status.toUpperCase();
+        if (up === 'APPROVED' || up === 'REJECTED' || up === 'RESOLVED') {
+          await reportRegistry.markReminded(slackTs);
+        }
+      }
 
       const creditLimitChannel = process.env.SLACK_CHANNEL_CREDIT_LIMIT || process.env.SLACK_CHANNEL_ADMIN;
 

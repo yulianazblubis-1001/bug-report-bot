@@ -2,6 +2,10 @@ import {
   appendRegistryEntry,
   getRegistryEntry,
   markRegistryResolved,
+  markRegistryRejected,
+  markRegistryReminded,
+  getAllRegistryEntries,
+  type RegistryEntry,
 } from './google-sheets';
 
 export interface RegistryRecord {
@@ -58,5 +62,30 @@ export async function markResolved(messageTs: string): Promise<void> {
     await markRegistryResolved(messageTs);
   } catch (err: any) {
     console.error('[ReportRegistry] Failed to mark resolved:', err.message);
+  }
+}
+
+export async function markRejected(messageTs: string): Promise<void> {
+  try {
+    await markRegistryRejected(messageTs);
+  } catch (err: any) {
+    console.error('[ReportRegistry] Failed to mark rejected:', err.message);
+  }
+}
+
+export async function markReminded(messageTs: string): Promise<void> {
+  try {
+    await markRegistryReminded(messageTs);
+  } catch (err: any) {
+    console.error('[ReportRegistry] Failed to mark reminded:', err.message);
+  }
+}
+
+export async function getAll(): Promise<Array<{ rowIndex: number; entry: RegistryEntry }>> {
+  try {
+    return await getAllRegistryEntries();
+  } catch (err: any) {
+    console.error('[ReportRegistry] Failed to list entries:', err.message);
+    return [];
   }
 }

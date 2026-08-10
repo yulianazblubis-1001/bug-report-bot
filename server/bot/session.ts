@@ -2,6 +2,14 @@ import { ensureTable, storeMapping, getMapping, findMappingByTs, findMappingByRe
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
+// pg surfaces connection failures as an AggregateError whose top-level `message`
+// is empty — the real cause lives in `.errors[0]`. Unwrap it so logs are useful.
+function dbErrorDetail(err: any): string {
+  const parts = [err?.message, err?.errors?.[0]?.message, err?.code, err?.errors?.[0]?.code]
+    .filter(Boolean);
+  return parts.length ? Array.from(new Set(parts)).join(' | ') : String(err);
+}
+
 export interface ConversationMessage {
   role: 'user' | 'assistant';
   text: string;
@@ -135,7 +143,7 @@ class SessionStore {
     try {
       await storeMapping(slackTs, channelId, data);
     } catch (err: any) {
-      console.error('[SessionStore] Failed to store Slack mapping:', err.message);
+      console.error('[SessionStore] Failed to store Slack mapping:', dbErrorDetail(err));
     }
   }
 
@@ -143,7 +151,7 @@ class SessionStore {
     try {
       return await getMapping(slackTs, channelId);
     } catch (err: any) {
-      console.error('[SessionStore] Failed to get Slack mapping:', err.message);
+      console.error('[SessionStore] Failed to get Slack mapping:', dbErrorDetail(err));
       return null;
     }
   }
@@ -152,7 +160,7 @@ class SessionStore {
     try {
       return await findMappingByTs(slackTs);
     } catch (err: any) {
-      console.error('[SessionStore] Failed to find mapping by ts:', err.message);
+      console.error('[SessionStore] Failed to find mapping by ts:', dbErrorDetail(err));
       return null;
     }
   }
@@ -161,7 +169,7 @@ class SessionStore {
     try {
       return await findMappingByRequestId(requestId);
     } catch (err: any) {
-      console.error('[SessionStore] Failed to find mapping by requestId:', err.message);
+      console.error('[SessionStore] Failed to find mapping by requestId:', dbErrorDetail(err));
       return null;
     }
   }

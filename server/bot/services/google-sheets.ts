@@ -295,15 +295,16 @@ export interface RegistryEntry {
   reporterPhone: string;  // D
   reporterName: string;   // E
   reportType: string;     // F bug | admin | credit
-  status: string;         // G PENDING | DONE
+  status: string;         // G PENDING | DONE | REJECTED
   createdAt: string;      // H
   resolvedAt: string;     // I
+  remindedAt: string;     // J - when the ~23h "no response yet" reminder was sent
 }
 
 const REGISTRY_HEADERS = [
   'slack_message_ts', 'slack_channel_id', 'report_number',
   'reporter_phone', 'reporter_name', 'report_type',
-  'status', 'created_at', 'resolved_at',
+  'status', 'created_at', 'resolved_at', 'reminded_at',
 ];
 
 export async function appendRegistryEntry(
@@ -342,7 +343,7 @@ export async function getRegistryEntry(messageTs: string): Promise<{ rowIndex: n
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'reports_registry!A:I',
+    range: 'reports_registry!A:J',
   });
 
   const rows = res.data.values || [];
@@ -350,22 +351,48 @@ export async function getRegistryEntry(messageTs: string): Promise<{ rowIndex: n
     if (rows[i][0] === messageTs) {
       return {
         rowIndex: i + 1,
-        entry: {
-          messageTs:     rows[i][0] || '',
-          channelId:     rows[i][1] || '',
-          reportNumber:  rows[i][2] || '',
-          reporterPhone: rows[i][3] || '',
-          reporterName:  rows[i][4] || '',
-          reportType:    rows[i][5] || '',
-          status:        rows[i][6] || '',
-          createdAt:     rows[i][7] || '',
-          resolvedAt:    rows[i][8] || '',
-        },
+        entry: rowToRegistryEntry(rows[i]),
       };
     }
   }
 
   return null;
+}
+
+function rowToRegistryEntry(row: any[]): RegistryEntry {
+  return {
+    messageTs:     row[0] || '',
+    channelId:     row[1] || '',
+    reportNumber:  row[2] || '',
+    reporterPhone: row[3] || '',
+    reporterName:  row[4] || '',
+    reportType:    row[5] || '',
+    status:        row[6] || '',
+    createdAt:     row[7] || '',
+    resolvedAt:    row[8] || '',
+    remindedAt:    row[9] || '',
+  };
+}
+
+// Read every registry row (used by the ~23h "no response yet" reminder sweep).
+export async function getAllRegistryEntries(): Promise<Array<{ rowIndex: number; entry: RegistryEntry }>> {
+  await ensureTabExists('reports_registry', REGISTRY_HEADERS);
+  const sheets = await getUncachableGoogleSheetClient();
+  const spreadsheetId = getSheetId();
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'reports_registry!A:J',
+  });
+
+  const rows = res.data.values || [];
+  const out: Array<{ rowIndex: number; entry: RegistryEntry }> = [];
+  // Skip the header row (row 1) — start at index 1.
+  for (let i = 1; i < rows.length; i++) {
+    if (!rows[i] || !rows[i][0]) continue;
+    out.push({ rowIndex: i + 1, entry: rowToRegistryEntry(rows[i]) });
+  }
+  return out;
 }
 
 export async function markRegistryResolved(messageTs: string): Promise<void> {
@@ -408,6 +435,70 @@ export async function markRegistryResolved(messageTs: string): Promise<void> {
   });
 
   console.log(`[Registry] Marked DONE: ts=${messageTs}`);
+}
+
+async function findRegistryRowIndex(messageTs: string): Promise<number> {
+  const sheets = await getUncachableGoogleSheetClient();
+  const spreadsheetId = getSheetId();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'reports_registry!A:A',
+  });
+  const rows = res.data.values || [];
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i][0] === messageTs) return i + 1;
+  }
+  return -1;
+}
+
+// Mark a report as rejected / not-a-bug so the ~23h reminder sweep skips it.
+export async function markRegistryRejected(messageTs: string): Promise<void> {
+  await ensureTabExists('reports_registry', REGISTRY_HEADERS);
+  const sheets = await getUncachableGoogleSheetClient();
+  const spreadsheetId = getSheetId();
+
+  const rowIndex = await findRegistryRowIndex(messageTs);
+  if (rowIndex === -1) {
+    console.warn(`[Registry] markRejected: ts=${messageTs} not found`);
+    return;
+  }
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `reports_registry!G${rowIndex}:G${rowIndex}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [['REJECTED']] },
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `reports_registry!I${rowIndex}:I${rowIndex}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[getWIBTimestamp()]] },
+  });
+
+  console.log(`[Registry] Marked REJECTED: ts=${messageTs}`);
+}
+
+// Stamp when the ~23h "no response yet" reminder was sent, so it fires only once.
+export async function markRegistryReminded(messageTs: string): Promise<void> {
+  await ensureTabExists('reports_registry', REGISTRY_HEADERS);
+  const sheets = await getUncachableGoogleSheetClient();
+  const spreadsheetId = getSheetId();
+
+  const rowIndex = await findRegistryRowIndex(messageTs);
+  if (rowIndex === -1) {
+    console.warn(`[Registry] markReminded: ts=${messageTs} not found`);
+    return;
+  }
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `reports_registry!J${rowIndex}:J${rowIndex}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[getWIBTimestamp()]] },
+  });
+
+  console.log(`[Registry] Marked REMINDED: ts=${messageTs}`);
 }
 
 // ─── Farmer Database ──────────────────────────────────────────────────────────
