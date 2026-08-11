@@ -17,6 +17,8 @@ async function getOrCreateSubfolder(
   const search = await drive.files.list({
     q: `'${parentFolderId}' in parents and name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
     fields: 'files(id)',
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
   });
 
   if (search.data.files?.length > 0) {
@@ -32,6 +34,7 @@ async function getOrCreateSubfolder(
       parents: [parentFolderId],
     },
     fields: 'id',
+    supportsAllDrives: true,
   });
 
   console.log(`[Google Drive] Created subfolder: ${folderName}`);
@@ -88,6 +91,7 @@ export async function uploadFileToFolder(
       body: stream,
     },
     fields: 'id',
+    supportsAllDrives: true,
   });
 
   const fileId = uploadRes.data.id;
@@ -103,6 +107,7 @@ export async function uploadFileToFolder(
         type: 'domain',
         domain: 'rize.farm',
       },
+      supportsAllDrives: true,
     });
   } catch {
     await drive.permissions.create({
@@ -111,6 +116,7 @@ export async function uploadFileToFolder(
         role: 'reader',
         type: 'anyone',
       },
+      supportsAllDrives: true,
     });
   }
 
