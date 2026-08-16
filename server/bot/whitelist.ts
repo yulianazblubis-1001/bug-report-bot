@@ -28,7 +28,3 @@ export function getAllAgronomists(): Array<{ phoneNumber: string; name: string; 
     area: profile.area,
   }));
 }
-
-export const REJECTED_MSG = `⚠️ Maaf, nomor kamu belum terdaftar. Hubungi Territory Manager kamu.
-
-_(Sorry, your number is not registered. Contact your Territory Manager.)_`;

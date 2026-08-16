@@ -15,6 +15,10 @@ import multer from 'multer';
 import * as reportRegistry from './bot/services/reportRegistry';
 import { getNextReportNumber } from './bot/services/reportCounter';
 import { startReminderSweep } from './bot/services/reminderSweep';
+import { resyncKnowledgeBase } from './bot/services/farmer-kb-ingest';
+import { seedSheetFromLocalFiles } from './bot/services/farmer-kb-seed';
+import { getChunkStats } from './bot/farmer-kb-db';
+import { invalidateCache } from './bot/services/farmer-knowledge';
 
 export async function registerRoutes(
   httpServer: Server,
@@ -787,6 +791,60 @@ export async function registerRoutes(
         logId,
         details: err.message,
       });
+    }
+  });
+
+  // ─── Farmer Knowledge Base Admin ─────────────────────────────────
+  // One-off/on-demand endpoints — not called by the bot at runtime. Used to
+  // (1) seed the knowledge-base Google Sheet from the extracted NotebookLM
+  // files once, and (2) resync the vector store from that Sheet whenever its
+  // content changes. Protected by KB_ADMIN_SECRET the same way sheet-update
+  // is protected by SHEET_WEBHOOK_SECRET.
+  function checkKbAdminSecret(req: any, res: any): boolean {
+    const secret = process.env.KB_ADMIN_SECRET;
+    if (!secret) {
+      res.status(500).json({ error: "KB_ADMIN_SECRET not configured" });
+      return false;
+    }
+    const provided = req.headers['x-admin-secret'] || req.query?.secret;
+    if (provided !== secret) {
+      res.status(401).json({ error: "Unauthorized" });
+      return false;
+    }
+    return true;
+  }
+
+  app.post("/api/admin/kb-seed", async (req, res) => {
+    if (!checkKbAdminSecret(req, res)) return;
+    try {
+      const result = await seedSheetFromLocalFiles();
+      res.json({ status: "ok", ...result });
+    } catch (err: any) {
+      console.error("[KB Admin] Seed failed:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/kb-resync", async (req, res) => {
+    if (!checkKbAdminSecret(req, res)) return;
+    try {
+      const result = await resyncKnowledgeBase();
+      invalidateCache();
+      res.json({ status: "ok", ...result });
+    } catch (err: any) {
+      console.error("[KB Admin] Resync failed:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/kb-stats", async (req, res) => {
+    if (!checkKbAdminSecret(req, res)) return;
+    try {
+      const stats = await getChunkStats();
+      res.json({ status: "ok", stats });
+    } catch (err: any) {
+      console.error("[KB Admin] Stats failed:", err.message);
+      res.status(500).json({ error: err.message });
     }
   });
 

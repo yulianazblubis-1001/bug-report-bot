@@ -4,7 +4,8 @@ import * as wati from './services/wati';
 import * as slack from './services/slack';
 import { evaluateReport } from './services/claude-agent';
 import { addReportLog } from './activityLog';
-import { isWhitelisted, lookupProfile, REJECTED_MSG } from './whitelist';
+import { isWhitelisted, lookupProfile } from './whitelist';
+import { handleFarmerMessage } from './farmer-flow';
 import * as googleSheets from './services/google-sheets';
 import * as googleDrive from './services/google-drive';
 import { v4 as uuidv4 } from 'uuid';
@@ -128,12 +129,7 @@ export async function handleMessage(
   }
 
   if (!isWhitelisted(phoneNumber)) {
-    const isTrigger = TRIGGER_KEYWORDS.some(kw => upperText.includes(kw));
-    if (isTrigger) {
-      await wati.sendMessage(phoneNumber, REJECTED_MSG);
-    } else {
-      console.log(`[Router] Ignoring message from non-whitelisted ${phoneNumber}: "${cleanText.substring(0, 50)}"`);
-    }
+    await handleFarmerMessage(phoneNumber, senderName, cleanText, messageType, mediaUrl);
     return;
   }
 
