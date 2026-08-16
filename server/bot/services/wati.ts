@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { recordSent } from '../outboundTracker';
 
 function getAuthHeader(): string {
   const token = process.env.WATI_TOKEN || '';
@@ -45,6 +46,7 @@ export async function sendTemplateMessage(
       throw Object.assign(new Error(`WATI template rejected: ${msg}`), { watiRejected: true, watiData: res.data });
     }
     console.log(`[WATI] Template sent to ${phoneNumber} (${templateName}) ok`);
+    recordSent(phoneNumber);
     return res.data;
   } catch (err: any) {
     if (err.watiRejected) throw err;
@@ -83,6 +85,7 @@ export async function sendMessage(phoneNumber: string, text: string): Promise<an
       throw Object.assign(new Error(`WATI rejected: ${msg}`), { watiRejected: true, watiData: res.data });
     }
     console.log(`[WATI] Sent to ${phoneNumber} (ok): ${text.substring(0, 60)}...`);
+    recordSent(phoneNumber);
     return res.data;
   } catch (err: any) {
     if (err.watiRejected) throw err;

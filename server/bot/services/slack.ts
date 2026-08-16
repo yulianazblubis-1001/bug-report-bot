@@ -812,6 +812,95 @@ export async function addSlackReaction(
   }
 }
 
+const FARMER_QA_ESCALATION_CHANNEL = 'C0766PKUK1N'; // #bug-and-admin-requests
+const FARMER_QA_MENTION_IDS = ['U09AD2K72UW', 'U08M9PU9EKV'];
+
+function buildFarmerQuestionBlocks(
+  phoneNumber: string,
+  senderName: string,
+  question: string,
+  translatedQuestion: string
+): any[] {
+  const timestamp = getWIBTimestamp();
+  const mentions = FARMER_QA_MENTION_IDS.map((id) => `<@${id}>`).join(' ');
+
+  return [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: '❓ Unanswered Farmer Question', emoji: true },
+    },
+    { type: 'divider' },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Phone Number:* +${phoneNumber}` },
+        { type: 'mrkdwn', text: `*WhatsApp Name:* ${senderName || '—'}` },
+      ],
+    },
+    { type: 'divider' },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Question (Original):*\n${question}` },
+        { type: 'mrkdwn', text: `*Question (English):*\n${translatedQuestion}` },
+      ],
+    },
+    { type: 'divider' },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `${mentions} — no matching info in the knowledge base. Please reply to the farmer directly via WhatsApp.`,
+      },
+    },
+    {
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `${timestamp} | +${phoneNumber}` }],
+    },
+  ];
+}
+
+/**
+ * Informational-only escalation card for a farmer question the auto-answer
+ * pipeline couldn't ground in the knowledge base. No reaction handling —
+ * Ops replies to the farmer manually via WhatsApp, outside the bot.
+ */
+export async function postFarmerQuestionToSlack(
+  phoneNumber: string,
+  senderName: string,
+  question: string,
+  translatedQuestion: string
+): Promise<void> {
+  const botToken = process.env.SLACK_BOT_TOKEN;
+  const channelId = process.env.SLACK_CHANNEL_FARMER_QA || FARMER_QA_ESCALATION_CHANNEL;
+
+  if (!botToken) {
+    console.error('[Slack] SLACK_BOT_TOKEN not configured — cannot escalate unanswered farmer question');
+    return;
+  }
+
+  const blocks = buildFarmerQuestionBlocks(phoneNumber, senderName, question, translatedQuestion);
+  const fallbackText = `Unanswered farmer question from ${senderName || phoneNumber}`;
+
+  try {
+    const res = await axios.post('https://slack.com/api/chat.postMessage', {
+      channel: channelId,
+      text: fallbackText,
+      blocks,
+    }, {
+      headers: { Authorization: `Bearer ${botToken}` },
+    });
+
+    if (!res.data.ok) {
+      console.error('[Slack] Failed to post unanswered farmer question:', res.data.error);
+      return;
+    }
+    console.log(`[Slack] Escalated unanswered question from ${phoneNumber} to #bug-and-admin-requests (ts: ${res.data.ts})`);
+  } catch (err: any) {
+    console.error('[Slack] Error posting unanswered farmer question:', err.response?.data || err.message);
+  }
+}
+
 export async function getSlackUserName(userId: string): Promise<string> {
   const botToken = process.env.SLACK_BOT_TOKEN;
   if (!botToken) return userId;

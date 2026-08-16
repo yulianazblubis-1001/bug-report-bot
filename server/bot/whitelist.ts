@@ -3,7 +3,7 @@ import agronomistDb from './agronomist-database.json';
 
 const database: Record<string, AgronomistProfile> = agronomistDb as any;
 
-function cleanNumber(num: string): string {
+export function cleanNumber(num: string): string {
   return num.replace(/[\+\s\-\(\)]/g, '');
 }
 
